@@ -1,0 +1,22 @@
+HITECH SERVICES — START HERE
+============================
+
+CHECK ON YOUR PC (no npm, no install)
+  1. Open folder  1-Website
+  2. Edit  config.js  in Notepad: paste your Supabase Project URL and anon key
+     (Supabase > Project Settings > API). Save.
+  3. Double-click  index.html  -> opens in Chrome -> Office login
+     Technician app: add  #/tech  at the end of the address in the address bar
+
+  "Setup needed" screen  = config.js not filled yet
+  Login fails             = Supabase setup (README steps 1-3) not done yet
+
+PUT IT ONLINE (GitHub Pages)
+  Upload everything INSIDE 1-Website to a GitHub repository,
+  then Settings > Pages > Deploy from branch > main / root.
+  Full steps: README.md (section 6)
+
+FIRST-TIME SUPABASE SETUP
+  Files are in  2-Supabase-Setup.  Steps: README.md (sections 1-3)
+
+DO NOT open 3-Source-Code\index.html - that is source code for developers (needs npm).

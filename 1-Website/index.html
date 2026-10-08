@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Hitech Services — Operations</title>
+
+    <link rel="manifest" id="app-manifest" href="./manifest.json" />
+    <meta name="theme-color" id="app-theme" content="#1a6ef0" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" id="app-title" content="Hitech Ops" />
+    <link rel="apple-touch-icon" id="app-touch-icon" href="./icons/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" href="./icons/icon-192.png" />
+
+    <!-- Supabase keys live here (edit config.js, no rebuild needed) -->
+    <script src="./config.js"></script>
+
+    <!-- Technician links (…/#/tech) install as a separate "HT Jobs" app -->
+    <script>
+      (function () {
+        if (location.hash.indexOf('#/tech') === 0) {
+          document.getElementById('app-manifest').href = './manifest-tech.json'
+          document.getElementById('app-theme').content = '#0f1c2e'
+          document.getElementById('app-title').content = 'HT Jobs'
+          document.getElementById('app-touch-icon').href = './icons/tech-apple-touch-icon.png'
+          document.title = 'HT Jobs — Hitech Services'
+        }
+      })()
+    </script>
+    <script defer src="./assets/app.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    </body>
+</html>
