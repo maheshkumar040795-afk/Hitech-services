@@ -9,6 +9,7 @@ import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
 import { useTechnicians } from '../hooks/useData'
 import OrderDrawer from '../components/OrderDrawer'
+import TechPicker from '../components/TechPicker'
 import Modal, { Field } from '../components/Modal'
 
 const LIMIT = 25
@@ -141,10 +142,8 @@ function OrderFormModal({ order, techs, onClose, onSaved }) {
             <input className="input pl-9" inputMode="url" placeholder="https://maps.app.goo.gl/…" value={f.location_url} onChange={set('location_url')} /></div>
         </Field></div>
         <div className="sm:col-span-2"><Field label="Assign Technician">
-          <select className="input" value={f.technician_id} onChange={set('technician_id')}>
-            <option value="">— Unassigned —</option>
-            {techs.filter((t) => t.is_active || t.id === f.technician_id).map((t) => <option key={t.id} value={t.id}>{techLabel(t)}{t.city ? ` · ${t.city}` : ''}</option>)}
-          </select></Field></div>
+          <TechPicker techs={techs} value={f.technician_id || ''} onChange={(v) => setF((p) => ({ ...p, technician_id: v }))}
+            extra={[{ value: '', label: '— Unassigned —' }]} placeholder="— Unassigned —" className="w-full" /></Field></div>
         {completed && <>
           <Field label="Amount collected ₹"><input type="number" min="0" step="0.01" className="input" value={f.cod_amount} onChange={set('cod_amount')} /></Field>
           <Field label="Payment">
@@ -259,7 +258,6 @@ export default function OrdersPage() {
   const allSel = orders.length > 0 && orders.every((o) => selected.has(o.id))
   const toggleAll = () => setSelected(allSel ? new Set() : new Set(orders.map((o) => o.id)))
   const toggle = (id) => { const s = new Set(selected); s.has(id) ? s.delete(id) : s.add(id); setSelected(s) }
-  const activeTechs = techs.filter((t) => t.is_active)
   const filtersOn = f.search || f.status || f.tech || f.from || f.to
 
   return (
@@ -293,10 +291,9 @@ export default function OrdersPage() {
         <select className="input w-auto py-2" value={f.status} onChange={setFilter('status')}>
           <option value="">All statuses</option><option value="PENDING">Pending</option><option value="RESCHEDULED">Rescheduled</option><option value="COMPLETED">Completed</option><option value="REJECTED">Rejected</option>
         </select>
-        <select className="input w-auto py-2" value={f.tech} onChange={setFilter('tech')}>
-          <option value="">All technicians</option><option value="none">⚠ Unassigned</option>
-          {techs.map((t) => <option key={t.id} value={t.id}>{techLabel(t)}</option>)}
-        </select>
+        <TechPicker techs={techs} value={f.tech} activeOnly={false} showLoad={false} placeholder="All technicians" className="w-auto min-w-[180px]"
+          extra={[{ value: '', label: 'All technicians' }, { value: 'none', label: '⚠ Unassigned' }]}
+          onChange={(v) => { setF((p) => ({ ...p, tech: v })); setPage(1); setSelected(new Set()) }} />
         <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-3 py-1.5">
           <input type="date" className="text-xs outline-none" value={f.from} onChange={setFilter('from')} title="From date" />
           <span className="text-xs text-slate-400">to</span>
@@ -308,10 +305,8 @@ export default function OrdersPage() {
       {selected.size > 0 && (
         <div className="card p-3 bg-brand-50 border-brand-200 flex flex-wrap items-center gap-2">
           <span className="text-sm font-semibold text-brand-700 mr-2">{selected.size} selected</span>
-          <select className="input w-auto py-1.5 text-xs" value={bulkTech} onChange={(e) => setBulkTech(e.target.value)}>
-            <option value="">Assign to…</option><option value="none">— Unassign —</option>
-            {activeTechs.map((t) => <option key={t.id} value={t.id}>{techLabel(t)}</option>)}
-          </select>
+          <TechPicker techs={techs} value={bulkTech} onChange={setBulkTech} placeholder="Assign to…" className="w-auto min-w-[200px] py-1.5 text-xs"
+            extra={[{ value: 'none', label: '— Unassign —' }]} />
           <button disabled={!bulkTech || busy} className="btn-primary text-xs py-1.5"
             onClick={() => update([...selected], { technician_id: bulkTech === 'none' ? null : bulkTech }, `${selected.size} orders ${bulkTech === 'none' ? 'unassigned' : 'assigned'}`).then(() => { setSelected(new Set()); setBulkTech('') })}>Assign</button>
           <span className="w-px h-6 bg-brand-200 mx-1" />
@@ -359,15 +354,12 @@ export default function OrdersPage() {
                     <td className="px-3 py-2 text-xs text-slate-600">{o.location}{isUrl(o.location_url) && <a href={o.location_url} target="_blank" rel="noreferrer" title="Open Google location" className="ml-1 inline-flex align-middle text-emerald-600 hover:text-emerald-700"><MapPin size={12} /></a>}</td>
                     <td className="px-3 py-2 font-mono text-xs text-slate-400">{o.pin_code}</td>
                     <td className="px-3 py-2">
-                      <select value={o.technician_id || ''} disabled={busy}
-                        onChange={(e) => {
-                          const t = techs.find((x) => x.id === e.target.value)
-                          update([o.id], { technician_id: e.target.value || null }, t ? `${o.order_id} assigned to ${techLabel(t)}` : `${o.order_id} unassigned`)
-                        }}
-                        className={`text-[11px] px-2 py-1 rounded-lg border max-w-[130px] ${o.technician_id ? 'border-slate-200 bg-white text-slate-700' : 'border-red-200 bg-red-50 text-red-600 font-semibold'}`}>
-                        <option value="">Unassigned</option>
-                        {techs.filter((t) => t.is_active || t.id === o.technician_id).map((t) => <option key={t.id} value={t.id}>{techLabel(t)}</option>)}
-                      </select>
+                      <TechPicker size="sm" techs={techs} value={o.technician_id || ''} disabled={busy} danger={!o.technician_id}
+                        placeholder="Unassigned" extra={[{ value: '', label: 'Unassigned' }]}
+                        onChange={(v) => {
+                          const t = techs.find((x) => x.id === v)
+                          update([o.id], { technician_id: v || null }, t ? `${o.order_id} assigned to ${techLabel(t)}` : `${o.order_id} unassigned`)
+                        }} />
                     </td>
                     <td className="px-3 py-2">
                       <select value={o.status} disabled={busy} onChange={(e) => e.target.value === 'RESCHEDULED' ? setResched([o]) : update([o.id], { status: e.target.value }, `${o.order_id} → ${STATUS[e.target.value].label}`)}

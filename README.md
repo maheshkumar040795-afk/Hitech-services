@@ -176,3 +176,10 @@ Only **ORDER ID** and **CUSTOMER NAME** are required. Download **Template** on t
 
 - Audit Log is now **order-wise**: each order shows who last modified it and its **last 3 changes**. Older entries are deleted automatically by the database (also per technician / user). Excel upload history keeps the last 20.
 - Statistics cards removed; the page loads only one small list per page (20 orders).
+
+## Update — Oct 2026 (5): 300 technicians, less data, weekly backup
+
+- **Less data (free-plan safe):** HT Jobs downloads only the fields it shows, open jobs + jobs closed in the last 3 days (button for 30 days), and re-checks every 5 min while live updates are on (1 min if live updates drop). Office screens group live refreshes (one every 3 s at most); technician list cached 5 min.
+- **Searchable technician picker** everywhere (orders row, bulk assign, new/edit order, filters, Reports, ID Cards): type ID, name, area or mobile; shows each technician's open jobs.
+- **Technicians page:** filters Active / Working today / App not set up / Inactive, 24 cards at a time with "Show more".
+- **Settings → Download full backup:** one Excel with Orders, Comments, Technicians, Bills, Users, Company. Do it weekly and keep in Google Drive.

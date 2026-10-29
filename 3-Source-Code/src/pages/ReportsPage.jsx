@@ -5,6 +5,7 @@ import { supabase, rpc, errMsg, fetchAll } from '../lib/supabase'
 import { fmtDate, fmtDateTime, fmtDayIST, fmtMoney, STATUS, PAYMENT, todayIST, addDays, techLabel } from '../lib/format'
 import { downloadXlsx } from '../lib/excel'
 import { useTechnicians } from '../hooks/useData'
+import TechPicker from '../components/TechPicker'
 import { useToast } from '../context/ToastContext'
 
 const SELECT = '*, technician:technicians(name, mobile, city), modifier:profiles!orders_modified_by_fkey(name)'
@@ -79,7 +80,8 @@ export default function ReportsPage() {
         <div><label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Status</label>
           <select className="input py-2" value={f.status} onChange={set('status')}><option value="">All</option>{Object.keys(STATUS).map((k) => <option key={k} value={k}>{STATUS[k].label}</option>)}</select></div>
         <div><label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Technician</label>
-          <select className="input py-2" value={f.tech} onChange={set('tech')}><option value="">All</option><option value="none">Unassigned</option>{techs.map((t) => <option key={t.id} value={t.id}>{techLabel(t)}</option>)}</select></div>
+          <TechPicker techs={techs} value={f.tech} activeOnly={false} showLoad={false} placeholder="All" className="min-w-[200px]"
+            extra={[{ value: '', label: 'All' }, { value: 'none', label: 'Unassigned' }]} onChange={(v) => setF((p) => ({ ...p, tech: v }))} /></div>
         <button onClick={() => setActive(f)} className="btn-primary text-xs py-2.5"><Search size={12} /> Retrieve</button>
       </div>
 

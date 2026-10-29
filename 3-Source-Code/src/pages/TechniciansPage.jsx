@@ -206,7 +206,8 @@ export default function TechniciansPage() {
   const { data: techs = [], isLoading } = useTechnicians()
   const { data: stats = {} } = useTechStats()
   const [search, setSearch] = useState('')
-  const [showInactive, setShowInactive] = useState(false)
+  const [view, setView] = useState('active')   // active | working | noapp | inactive
+  const [shown, setShown] = useState(24)
   const [profileId, setProfileId] = useState(null)
   const [form, setForm] = useState(null) // null | 'new' | tech
   const [loginFor, setLoginFor] = useState(null)
@@ -217,8 +218,17 @@ export default function TechniciansPage() {
   const dismissReset = async (techId) => { await resolvePinResets(techId, 'CANCELLED').catch(() => {}); refresh() }
   const ago = (t) => { const m = Math.max(1, Math.round((Date.now() - new Date(t).getTime()) / 60000)); return m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago` }
   const q = search.toLowerCase()
-  const list = techs.filter((t) => (showInactive || t.is_active) &&
-    (!q || t.name.toLowerCase().includes(q) || t.tech_code?.toLowerCase().includes(q) || t.city?.toLowerCase().includes(q) || t.mobile?.includes(q)))
+  const working = (t) => Number(stats[t.id]?.pending || 0) > 0 || Number(stats[t.id]?.done_today || 0) > 0
+  const VIEWS = [
+    ['active', 'Active', (t) => t.is_active],
+    ['working', 'Working today', (t) => t.is_active && working(t)],
+    ['noapp', 'App not set up', (t) => t.is_active && loginState(t) !== 'on'],
+    ['inactive', 'Inactive', (t) => !t.is_active],
+  ]
+  const inView = VIEWS.find((v) => v[0] === view)[2]
+  const list = techs.filter((t) => inView(t) &&
+    (!q || t.name.toLowerCase().includes(q) || t.tech_code?.toLowerCase().includes(q) || t.city?.toLowerCase().includes(q) || t.district?.toLowerCase().includes(q) || t.mobile?.includes(q)))
+  const visible = list.slice(0, shown)
   const profileTech = techs.find((t) => t.id === profileId)
 
   const importFile = async (e) => {
@@ -296,16 +306,22 @@ export default function TechniciansPage() {
       <div className="flex gap-3 items-center flex-wrap">
         <div className="relative flex-1 min-w-52">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input className="input pl-9 py-2" placeholder="Search ID, name, city or mobile…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input className="input pl-9 py-2" placeholder="Search ID, name, city or mobile…" value={search} onChange={(e) => { setSearch(e.target.value); setShown(24) }} />
         </div>
-        <label className="text-xs text-slate-600 flex items-center gap-1.5"><input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} /> Show inactive</label>
+        <div className="flex gap-1 flex-wrap">
+          {VIEWS.map(([k, l, fn]) => (
+            <button key={k} onClick={() => { setView(k); setShown(24) }} className={`chip ${view === k ? 'chip-on' : 'chip-off'}`}>
+              {l} <span className="opacity-70">{techs.filter(fn).length}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {isLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="card p-5 h-36 animate-pulse bg-slate-50" />)}</div>
       ) : (
         <div className="stagger grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-          {list.map((t) => {
+          {visible.map((t) => {
             const s = stats[t.id] || {}
             const ls = loginState(t)
             const rate = s.total > 0 ? Math.round((s.completed / s.total) * 100) : 0
@@ -337,6 +353,11 @@ export default function TechniciansPage() {
             )
           })}
           {list.length === 0 && <div className="col-span-full card p-12 text-center text-slate-400 text-sm">No technicians found</div>}
+          {list.length > shown && (
+            <button onClick={() => setShown((n) => n + 48)} className="col-span-full btn-secondary justify-center py-3">
+              Showing {shown} of {list.length} · Show more
+            </button>
+          )}
         </div>
       )}
     </div>

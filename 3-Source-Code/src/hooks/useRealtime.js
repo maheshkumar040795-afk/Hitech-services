@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase'
  * Security rules still apply — a technician only receives their own jobs.
  * onChange is debounced so a 100-row Excel upload triggers one refresh, not 100.
  */
-export function useOrdersRealtime({ filter, onChange, onEvent, enabled = true, channelName = 'orders-live' }) {
+export function useOrdersRealtime({ filter, onChange, onEvent, enabled = true, channelName = 'orders-live', debounceMs = 700 }) {
   const [connected, setConnected] = useState(false)
   const cb = useRef({ onChange, onEvent })
   cb.current = { onChange, onEvent }
@@ -19,11 +19,11 @@ export function useOrdersRealtime({ filter, onChange, onEvent, enabled = true, c
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', ...(filter ? { filter } : {}) }, (payload) => {
         cb.current.onEvent?.(payload)
         clearTimeout(timer)
-        timer = setTimeout(() => cb.current.onChange?.(), 700)
+        timer = setTimeout(() => cb.current.onChange?.(), debounceMs)
       })
       .subscribe((status) => setConnected(status === 'SUBSCRIBED'))
     return () => { clearTimeout(timer); supabase.removeChannel(channel) }
-  }, [filter, enabled, channelName])
+  }, [filter, enabled, channelName, debounceMs])
 
   return connected
 }

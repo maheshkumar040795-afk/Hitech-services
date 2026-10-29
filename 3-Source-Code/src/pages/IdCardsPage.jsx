@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { UserRoundSearch, Plus } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { useTechnicians } from '../hooks/useData'
 import { techLabel } from '../lib/format'
+import TechPicker from '../components/TechPicker'
 import { useToast } from '../context/ToastContext'
 
 /**
@@ -54,13 +55,7 @@ export default function IdCardsPage() {
           <p className="text-sm text-slate-500 mt-0.5">Generate employee ID cards · download PNG, PDF or print-ready CMYK</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative flex-1 sm:flex-none">
-            <UserRoundSearch size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            <select className="input pl-9 py-2 w-full sm:w-auto sm:min-w-[240px]" value={pick} onChange={(e) => fill(e.target.value)}>
-              <option value="">Fill from technician…</option>
-              {techs.filter((t) => t.is_active).map((t) => <option key={t.id} value={t.id}>{techLabel(t)}</option>)}
-            </select>
-          </div>
+          <TechPicker techs={techs} value={pick} onChange={fill} showLoad={false} placeholder="Fill from technician…" className="flex-1 sm:flex-none sm:min-w-[260px] py-2" />
           <button onClick={newCard} className="btn-primary text-xs py-2.5"><Plus size={14} /> New ID Card</button>
         </div>
       </div>

@@ -42,6 +42,7 @@ export default function AppShell() {
   // Live: when anyone (office or technician) changes an order, refresh screens
   const connected = useOrdersRealtime({
     channelName: 'office',
+    debounceMs: 3000,   // many technicians updating at once → one refresh every few seconds, not one per change
     onChange: () => {
       for (const key of ['orders', 'dashboard', 'tech-stats', 'order', 'reports']) qc.invalidateQueries({ queryKey: [key] })
     },

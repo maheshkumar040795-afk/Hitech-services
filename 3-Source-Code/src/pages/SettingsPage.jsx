@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Eye, EyeOff, Shield, Building2, Database, AlertCircle } from 'lucide-react'
-import { supabase, errMsg } from '../lib/supabase'
+import { Eye, EyeOff, Shield, Building2, Database, AlertCircle, Download, Loader2 } from 'lucide-react'
+import { supabase, errMsg, fetchAll } from '../lib/supabase'
+import { downloadXlsx } from '../lib/excel'
+import { fmtDate, fmtDateTime, fmtDayIST, todayIST, STATUS, PAYMENT } from '../lib/format'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { useAppSettings } from '../hooks/useData'
@@ -41,6 +43,46 @@ export default function SettingsPage() {
       return { orders, technicians, users, audit, bills }
     },
   })
+
+  // One Excel file with everything needed to rebuild the system (keep a copy every week)
+  const [backingUp, setBackingUp] = useState(false)
+  const fullBackup = async () => {
+    setBackingUp(true)
+    try {
+      const all = (t, sel, order = 'created_at') => fetchAll(() => supabase.from(t).select(sel).order(order, { ascending: true }))
+      const [orders, comments, techs, bills, users, company] = await Promise.all([
+        all('orders', '*, technician:technicians(tech_code, name)'),
+        all('comment_logs', 'comment, created_at, order:orders(order_id), user:profiles(name)'),
+        all('technicians', '*'),
+        all('bills', '*'),
+        all('profiles', 'name, login, role, is_active, created_at'),
+        supabase.from('app_settings').select('*').maybeSingle().then((r) => r.data),
+      ])
+      const yes = (b) => (b ? 'Yes' : 'No')
+      downloadXlsx(`hitech-backup-${todayIST()}.xlsx`, [
+        { name: 'Orders', rows: orders.map((o) => ({
+          'Order ID': o.order_id, 'Order Date': fmtDate(o.order_date), 'Rescheduled To': o.rescheduled_date ? fmtDate(o.rescheduled_date) : '',
+          'Customer Name': o.customer_name, 'Phone No': o.phone_no || '', Service: o.service || '', Brand: o.brand || '', Location: o.location || '',
+          Address: o.address || '', 'Pin Code': o.pin_code || '', 'Google Location': o.location_url || '',
+          'Technician ID': o.technician?.tech_code || '', Technician: o.technician?.name || '', Status: STATUS[o.status]?.label || o.status,
+          'Completed / Closed On': o.closed_at ? fmtDateTime(o.closed_at, { dateStyle: 'medium', timeStyle: 'short' }) : '',
+          Amount: Number(o.cod_amount || 0), Payment: PAYMENT[o.payment_mode] || '', 'Latest Comment': o.comments || '', Deleted: yes(o.is_deleted),
+        })) },
+        { name: 'Comments', rows: comments.map((c) => ({ 'Order ID': c.order?.order_id || '', Comment: c.comment, By: c.user?.name || '', 'Date/Time': fmtDateTime(c.created_at, { dateStyle: 'medium', timeStyle: 'short' }) })) },
+        { name: 'Technicians', rows: techs.map((t) => ({
+          'Technician ID': t.tech_code || '', Name: t.name, Mobile: t.mobile || '', Aadhaar: t.aadhar || '', City: t.city || '', District: t.district || '',
+          Pincode: t.pincode || '', State: t.state || '', Active: yes(t.is_active), 'App Login': yes(t.user_id), 'Added On': fmtDayIST(t.created_at),
+        })) },
+        { name: 'Bills', rows: bills.map((b) => ({
+          'Bill No': b.bill_number, Date: fmtDate(b.bill_date), Customer: b.customer_name, Address: b.address || '', Total: Number(b.total_amount || 0),
+          Items: (b.items || []).map((i) => `${i.particulars || ''} × ${i.quantity ?? ''} @ ${i.rate ?? ''} = ${i.amount ?? ''}`).join(' | '),
+        })) },
+        { name: 'Users', rows: users.map((u) => ({ Name: u.name, Login: u.login, Role: u.role, Active: yes(u.is_active), 'Created On': fmtDayIST(u.created_at) })) },
+        { name: 'Company', rows: company ? [{ Name: company.company_name, Address: company.company_address, Phone: company.company_phone || '', GSTIN: company.company_gstin || '' }] : [] },
+      ])
+      toast(`Backup downloaded · ${orders.length} orders, ${techs.length} technicians`, 'success')
+    } catch (e) { toast(errMsg(e), 'error') } finally { setBackingUp(false) }
+  }
 
   const changePassword = async (e) => {
     e.preventDefault(); setPwErr('')
@@ -108,7 +150,15 @@ export default function SettingsPage() {
               <div key={l} className="text-center p-3 bg-slate-50 rounded-xl border border-slate-200"><p className="text-lg font-bold text-slate-900">{v.toLocaleString('en-IN')}</p><p className="text-[10px] text-slate-400">{l}</p></div>
             ))}
           </div>
-          <p className="text-xs text-slate-500 mt-4">Free plan has no automatic backups. Once a week, export all orders from <b>Reports</b> (wide date range → Export Excel) and keep the file safe. Check database size in Supabase → Project → Usage.</p>
+          <div className="mt-5 flex flex-col sm:flex-row sm:items-center gap-3 p-4 rounded-2xl bg-brand-50/60 border border-brand-100">
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-slate-800">Weekly backup</p>
+              <p className="text-xs text-slate-500 mt-0.5">The free plan has no automatic backups. Once a week, download this file and keep it in Google Drive. It has every order, comment, technician, bill and user.</p>
+            </div>
+            <button onClick={fullBackup} disabled={backingUp} className="btn-primary text-xs whitespace-nowrap">
+              {backingUp ? <><Loader2 size={13} className="animate-spin" /> Preparing…</> : <><Download size={13} /> Download full backup</>}
+            </button>
+          </div>
         </Section>
       )}
     </div>

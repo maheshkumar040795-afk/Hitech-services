@@ -13,14 +13,16 @@ export function useTechnicians() {
       if (error) throw error
       return data
     },
-    staleTime: 60_000,
+    staleTime: 5 * 60_000,   // 300 technicians: load once, reuse across pages
   })
 }
 
 /** Per-technician counts; keyed by technician id */
-export function useTechStats(from = null, to = null) {
+export function useTechStats(from = null, to = null, opts = {}) {
   return useQuery({
     queryKey: ['tech-stats', from, to],
+    staleTime: 60_000,
+    ...opts,
     queryFn: async () => {
       const rows = await rpc('technician_stats', { p_from: from, p_to: to })
       return Object.fromEntries(rows.map((r) => [r.technician_id, r]))
@@ -54,7 +56,7 @@ export function usePinResets(enabled = true) {
       if (error) return []   // table not created yet → just show nothing
       return data
     },
-    refetchInterval: 30_000,
+    refetchInterval: 2 * 60_000,
     refetchIntervalInBackground: false,
   })
 }

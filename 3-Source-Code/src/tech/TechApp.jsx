@@ -21,7 +21,10 @@ const REASONS = [
   'Parts / material needed',
   'Site not ready',
 ]
-const JOB_FIELDS = '*'   // includes location_url, rescheduled_date, payment_mode when the database has them
+// Only what the phone shows (keeps mobile data and the free-plan download quota low)
+const JOB_FIELDS = 'id, order_id, order_date, rescheduled_date, customer_name, phone_no, service, brand, location, address, pin_code, location_url, status, comments, cod_amount, payment_mode, closed_at, assigned_at'
+const JOB_FIELDS_OLD = 'id, order_id, order_date, customer_name, phone_no, service, brand, location, address, pin_code, status, comments, cod_amount, closed_at, assigned_at'
+const HISTORY_SHORT = 3, HISTORY_LONG = 30   // days of Done / Not done jobs to download
 
 /** Pending or Rescheduled = still to visit */
 const isOpen = (j) => j.status === 'PENDING' || j.status === 'RESCHEDULED'
@@ -352,18 +355,25 @@ export default function TechApp() {
   const [search, setSearch] = useState('')
   const [newIds, setNewIds] = useState(() => new Set())
   const knownIds = useRef(null)
+  const liveRef = useRef(false)
+  const [historyDays, setHistoryDays] = useState(HISTORY_SHORT)
 
   const { data: jobs = [], isLoading, isFetching, isSuccess, refetch, error } = useQuery({
-    queryKey: ['my-jobs', technician?.id],
+    queryKey: ['my-jobs', technician?.id, historyDays],
     enabled: !!technician,
-    refetchInterval: 60_000,
+    // Live updates push changes instantly; the timer is only a safety net (faster if live updates are down)
+    refetchInterval: () => (liveRef.current ? 5 * 60_000 : 60_000),
     refetchOnWindowFocus: true,
+    placeholderData: (prev) => prev,
     queryFn: async () => {
-      const since = addDays(todayIST(), -30)
-      const { data, error } = await supabase.from('orders').select(JOB_FIELDS)
+      // open jobs (any date) + jobs closed in the last few days
+      const since = new Date(`${addDays(todayIST(), -(historyDays - 1))}T00:00:00+05:30`).toISOString()
+      const run = (fields) => supabase.from('orders').select(fields)
         .eq('technician_id', technician.id).eq('is_deleted', false)
-        .or(`status.not.in.(COMPLETED,REJECTED),order_date.gte.${since}`)
+        .or(`status.not.in.(COMPLETED,REJECTED),closed_at.gte."${since}"`)
         .order('order_date', { ascending: true })
+      let { data, error } = await run(JOB_FIELDS)
+      if (error?.code === '42703') ({ data, error } = await run(JOB_FIELDS_OLD))   // database update not run yet
       if (error) throw error
       return data
     },
@@ -387,6 +397,7 @@ export default function TechApp() {
 
   const refresh = useCallback(() => qc.invalidateQueries({ queryKey: ['my-jobs'] }), [qc])
   const live = useOrdersRealtime({ enabled: !!technician, filter: technician ? `technician_id=eq.${technician.id}` : undefined, channelName: 'tech', onChange: refresh })
+  liveRef.current = live
 
   useEffect(() => {
     const onVis = () => document.visibilityState === 'visible' && refresh()
@@ -462,10 +473,15 @@ export default function TechApp() {
           : list.length === 0 ? (
             <div className="text-center py-16 px-6">
               <div className="w-16 h-16 mx-auto rounded-full bg-white flex items-center justify-center mb-3">{tab === 'PENDING' ? <CheckCircle2 size={30} className="text-emerald-500" /> : <Clock size={28} className="text-slate-300" />}</div>
-              <p className="font-semibold text-slate-700">{search ? 'No matching jobs' : tab === 'PENDING' ? 'No pending jobs' : 'Nothing here in the last 30 days'}</p>
+              <p className="font-semibold text-slate-700">{search ? 'No matching jobs' : tab === 'PENDING' ? 'No pending jobs' : `Nothing here in the last ${historyDays} days`}</p>
               {tab === 'PENDING' && !search && <p className="text-sm text-slate-500 mt-1">New jobs appear here automatically when the office assigns them.</p>}
             </div>
           ) : list.map((j) => <JobCard key={j.id} job={j} isNew={newIds.has(j.id)} onOpen={() => openJob(j.id)} />)}
+        {tab !== 'PENDING' && !isLoading && historyDays === HISTORY_SHORT && (
+          <button onClick={() => setHistoryDays(HISTORY_LONG)} className="w-full py-3 rounded-2xl border-2 border-dashed border-slate-300 text-sm font-semibold text-slate-600 active:bg-white">
+            Showing last {HISTORY_SHORT} days · Show last {HISTORY_LONG} days
+          </button>
+        )}
       </main>
 
       <WelcomeModal mobile name={user?.name} badge={technician?.tech_code ? `Technician ID · ${technician.tech_code}` : 'Technician'}
