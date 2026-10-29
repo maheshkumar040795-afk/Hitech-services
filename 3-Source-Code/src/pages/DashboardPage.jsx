@@ -165,7 +165,7 @@ export default function DashboardPage() {
                 <span className={`text-[10px] font-bold w-5 ${i < 3 ? 'text-amber-500' : 'text-slate-300'}`}>#{i + 1}</span>
                 <div className="w-7 h-7 rounded-full bg-brand-100 flex items-center justify-center text-[10px] font-bold text-brand-700 flex-shrink-0">{t.name[0]}</div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-semibold text-slate-700 truncate">{t.name}</div>
+                  <div className="text-xs font-semibold text-slate-700 truncate">{t.name}{t.tech_code && <span className="ml-1 font-mono text-[10px] text-brand-600">{t.tech_code}</span>}</div>
                   <div className="text-[10px] text-slate-400">{fmtMoney(t.st.amount)} collected</div>
                 </div>
                 <span className="badge-completed" title="Completed">{t.st.completed}</span>

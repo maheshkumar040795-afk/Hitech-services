@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, Phone, MapPin, Send, History, MessageSquare } from 'lucide-react'
 import { supabase, errMsg } from '../lib/supabase'
-import { fmtDate, fmtDateTime, fmtMoney, STATUS, mapsUrl, telUrl } from '../lib/format'
+import { fmtDate, fmtDateTime, fmtMoney, STATUS, mapsUrl, telUrl, techLabel } from '../lib/format'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 
@@ -18,7 +18,7 @@ export default function OrderDrawer({ orderId, onClose }) {
     queryKey: ['order', orderId],
     queryFn: async () => {
       const { data, error } = await supabase.from('orders')
-        .select('*, technician:technicians(id,name,mobile,city), modifier:profiles!orders_modified_by_fkey(name), assigner:profiles!orders_assigned_by_fkey(name)')
+        .select('*, technician:technicians(*), modifier:profiles!orders_modified_by_fkey(name), assigner:profiles!orders_assigned_by_fkey(name)')
         .eq('id', orderId).single()
       if (error) throw error
       return data
@@ -79,7 +79,7 @@ export default function OrderDrawer({ orderId, onClose }) {
                 ['Phone', o.phone_no || '—'], ['Service', o.service || '—'],
                 ['Brand', o.brand || '—'], ['Pin Code', o.pin_code || '—'],
                 ['Location', o.location || '—'], ['Address', o.address || '—'],
-                ['Technician', o.technician?.name || 'Unassigned'], ['Amount Collected', fmtMoney(o.cod_amount)],
+                ['Technician', techLabel(o.technician) || 'Unassigned'], ['Amount Collected', fmtMoney(o.cod_amount)],
                 ['Assigned By', o.assigner?.name ? `${o.assigner.name}${o.assigned_at ? ' · ' + fmtDateTime(o.assigned_at) : ''}` : '—'],
                 ['Last Modified', o.modifier?.name ? `${o.modifier.name} · ${fmtDateTime(o.modified_at)}` : '—'],
               ].map(([l, v]) => (

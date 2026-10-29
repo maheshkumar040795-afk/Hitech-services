@@ -416,7 +416,9 @@ begin
       v_tech_id := null;
       v_tech_name := nullif(trim(v_row->>'technician'), '');
       if v_tech_name is not null then
-        select id into v_tech_id from technicians where lower(name) = lower(v_tech_name);
+        select id into v_tech_id from technicians
+          where upper(tech_code) = upper(replace(v_tech_name, ' ', '')) or lower(name) = lower(v_tech_name)
+          order by (upper(tech_code) = upper(replace(v_tech_name, ' ', ''))) desc limit 1;   -- TECHNICIAN column may hold the ID (HT001) or the name
         if v_tech_id is null then
           insert into technicians(name) values (v_tech_name) returning id into v_tech_id;
         end if;
@@ -665,3 +667,86 @@ do $$ begin
     begin alter publication supabase_realtime add table public.comment_logs; exception when duplicate_object then null; end;
   end if;
 end $$;
+
+
+-- ════ Added Oct 2026: Technician ID + keep-alive (same as update-2026-10-technician-id.sql) ════
+-- 1. Column
+alter table public.technicians add column if not exists tech_code text;
+
+-- 2. Next free HT number (ignores any custom IDs that are not HT + digits)
+create or replace function public.next_tech_code() returns text
+language plpgsql security definer set search_path = public as $$
+declare v_n int; v_code text;
+begin
+  perform pg_advisory_xact_lock(hashtext('technicians.tech_code'));
+  select coalesce(max(substring(tech_code from '^HT(\d+)$')::int), 0) + 1 into v_n
+    from technicians where tech_code ~ '^HT\d+$';
+  loop
+    v_code := 'HT' || lpad(v_n::text, 3, '0');
+    exit when not exists (select 1 from technicians where upper(tech_code) = v_code);
+    v_n := v_n + 1;
+  end loop;
+  return v_code;
+end $$;
+
+-- 3. Clean typed IDs and fill blanks automatically (works for the form, Excel import and order upload)
+create or replace function public.technicians_set_code() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  new.tech_code := nullif(upper(regexp_replace(coalesce(new.tech_code, ''), '\s+', '', 'g')), '');
+  if new.tech_code is null then
+    if tg_op = 'UPDATE' and old.tech_code is not null then
+      new.tech_code := old.tech_code;            -- clearing the box keeps the old ID
+    else
+      new.tech_code := public.next_tech_code();
+    end if;
+  end if;
+  return new;
+end $$;
+drop trigger if exists technicians_set_code on public.technicians;
+create trigger technicians_set_code before insert or update of tech_code on public.technicians
+for each row execute function public.technicians_set_code();
+
+-- 4. Number existing technicians (oldest first)
+do $$
+declare r record;
+begin
+  for r in select id from public.technicians where tech_code is null or trim(tech_code) = '' order by created_at, name loop
+    update public.technicians set tech_code = public.next_tech_code() where id = r.id;
+  end loop;
+end $$;
+
+-- 5. Required + unique (case-insensitive) + simple format: letters, digits, - or /
+alter table public.technicians alter column tech_code set not null;
+create unique index if not exists technicians_code_uq on public.technicians (upper(tech_code));
+do $$ begin
+  alter table public.technicians add constraint technicians_code_check check (tech_code ~ '^[A-Z0-9/-]{1,20}$');
+exception when duplicate_object then null; end $$;
+
+-- 6. Audit log shows the ID too
+create or replace function public.technicians_audit() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  insert into audit_logs(action, entity_type, entity_id, new_value, note, actor_id)
+  values (case when tg_op = 'INSERT' then 'TECHNICIAN_CREATED' else 'TECHNICIAN_UPDATED' end,
+          'technician', new.id::text,
+          jsonb_build_object('id', new.tech_code, 'name', new.name, 'mobile', new.mobile, 'city', new.city, 'active', new.is_active),
+          'Technician ' || new.name || ' (' || new.tech_code || ')' || case when tg_op = 'INSERT' then ' added' else ' updated' end,
+          auth.uid());
+  return null;
+end $$;
+drop trigger if exists technicians_audit on public.technicians;
+create trigger technicians_audit after insert or update of tech_code, name, mobile, city, district, pincode, is_active
+on public.technicians for each row
+when (coalesce(current_setting('app.bulk_import', true), '') <> 'on')
+execute function public.technicians_audit();
+
+-- 7. Keep-alive ping for the GitHub job (read-only, returns 1)
+create or replace function public.keep_alive() returns int language sql stable as $$ select 1 $$;
+revoke execute on function public.keep_alive() from public;
+grant execute on function public.keep_alive() to anon, authenticated;
+
+-- next_tech_code is only for the trigger
+revoke execute on function public.next_tech_code() from public, anon, authenticated;
+
+notify pgrst, 'reload schema';

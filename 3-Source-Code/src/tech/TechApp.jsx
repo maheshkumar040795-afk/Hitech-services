@@ -298,7 +298,7 @@ function AccountSheet({ onClose }) {
       <div className="p-5 space-y-5">
         <div className="flex items-center gap-3">
           <div className="w-14 h-14 rounded-2xl bg-brand-100 text-brand-700 font-bold text-xl flex items-center justify-center">{user?.name?.[0]}</div>
-          <div><p className="font-bold text-slate-900 text-lg">{user?.name}</p><p className="text-sm text-slate-500">+91 {user?.login}{technician?.city ? ` · ${technician.city}` : ''}</p></div>
+          <div><p className="font-bold text-slate-900 text-lg">{user?.name}</p><p className="text-sm text-slate-500">+91 {user?.login}{technician?.city ? ` · ${technician.city}` : ''}</p>{technician?.tech_code && <p className="text-xs font-mono font-semibold text-brand-700 mt-0.5">Technician ID: {technician.tech_code}</p>}</div>
         </div>
         <form onSubmit={changePin} className="space-y-2">
           <label className="block text-sm font-semibold text-slate-700">Change PIN</label>
@@ -399,7 +399,7 @@ export default function TechApp() {
         <div className="flex items-center justify-between px-4 pt-3 pb-2">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-brand-500 flex items-center justify-center font-black text-sm">HT</div>
-            <div><p className="text-[11px] text-slate-400 leading-none">HT Jobs</p><p className="font-bold leading-tight">{user?.name}</p></div>
+            <div><p className="text-[11px] text-slate-400 leading-none">HT Jobs</p><p className="font-bold leading-tight">{user?.name}{technician?.tech_code && <span className="ml-1.5 text-[11px] font-mono font-semibold text-brand-300">{technician.tech_code}</span>}</p></div>
           </div>
           <div className="flex items-center gap-1">
             <span className={`mr-1 ${live ? 'text-emerald-400' : 'text-slate-500'}`} title={live ? 'Live' : 'Reconnecting'}>{live ? <Wifi size={16} /> : <WifiOff size={16} />}</span>

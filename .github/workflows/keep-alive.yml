@@ -1,6 +1,7 @@
 # Keeps the Supabase free-plan project from auto-pausing after 7 days of no activity.
 # Runs on GitHub's servers only — it is NOT part of the website (only 1-Website/ is published).
-# Read-only: one SELECT on app_settings with the public publishable key from 1-Website/config.js.
+# Read-only: calls the keep_alive() database function (returns 1, touches no data) with the public
+# publishable key from 1-Website/config.js. keep_alive() is created by 2-Supabase-Setup/update-2026-10-technician-id.sql.
 name: Keep Supabase awake
 on:
   schedule:
@@ -20,8 +21,8 @@ jobs:
         run: |
           URL=$(grep -oP "SUPABASE_URL:\s*'\K[^']+" 1-Website/config.js)
           KEY=$(grep -oP "SUPABASE_ANON_KEY:\s*'\K[^']+" 1-Website/config.js)
-          code=$(curl -s -o /tmp/out.txt -w '%{http_code}' "$URL/rest/v1/app_settings?select=id&limit=1" \
-            -H "apikey: $KEY" -H "Authorization: Bearer $KEY")
+          code=$(curl -s -o /tmp/out.txt -w '%{http_code}' -X POST "$URL/rest/v1/rpc/keep_alive" \
+            -H "apikey: $KEY" -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -d '{}')
           echo "HTTP $code"; cat /tmp/out.txt; echo
           if [ "$code" != "200" ]; then
             echo "::error::Supabase did not answer (HTTP $code). If the project is paused, open the Supabase dashboard and click Resume project."

@@ -2,12 +2,12 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Download, Search } from 'lucide-react'
 import { supabase, rpc, errMsg, fetchAll } from '../lib/supabase'
-import { fmtDate, fmtDateTime, fmtMoney, STATUS, todayIST, addDays } from '../lib/format'
+import { fmtDate, fmtDateTime, fmtMoney, STATUS, todayIST, addDays, techLabel } from '../lib/format'
 import { downloadXlsx } from '../lib/excel'
 import { useTechnicians } from '../hooks/useData'
 import { useToast } from '../context/ToastContext'
 
-const SELECT = 'id, order_id, order_date, customer_name, phone_no, service, brand, location, address, pin_code, status, cod_amount, comments, closed_at, modified_at, technician:technicians(name, mobile, city), modifier:profiles!orders_modified_by_fkey(name)'
+const SELECT = 'id, order_id, order_date, customer_name, phone_no, service, brand, location, address, pin_code, status, cod_amount, comments, closed_at, modified_at, technician_id, technician:technicians(name, mobile, city), modifier:profiles!orders_modified_by_fkey(name)'
 
 function filtered(q, a) {
   q = q.eq('is_deleted', false).gte('order_date', a.from).lte('order_date', a.to)
@@ -39,7 +39,7 @@ export default function ReportsPage() {
   })
 
   const perf = (data?.stats || [])
-    .map((s) => ({ ...s, name: techs.find((t) => t.id === s.technician_id)?.name || '—' }))
+    .map((s) => ({ ...s, name: techLabel(techs.find((t) => t.id === s.technician_id)) || '—' }))
     .filter((s) => Number(s.total) > 0)
     .sort((a, b) => b.completed - a.completed)
 
@@ -51,7 +51,7 @@ export default function ReportsPage() {
       const orders = rows.map((o) => ({
         Date: fmtDate(o.order_date), 'Order ID': o.order_id, 'Customer Name': o.customer_name, 'Phone No': o.phone_no || '',
         Service: o.service || '', Brand: o.brand || '', Location: o.location || '', Address: o.address || '', 'Pin Code': o.pin_code || '',
-        Status: o.status, 'Amount Collected': Number(o.cod_amount || 0), Technician: o.technician?.name || 'Unassigned',
+        Status: o.status, 'Amount Collected': Number(o.cod_amount || 0), 'Technician ID': techs.find((t) => t.id === o.technician_id)?.tech_code || '', Technician: o.technician?.name || 'Unassigned',
         'Tech Mobile': o.technician?.mobile || '', 'Closed At': o.closed_at ? fmtDateTime(o.closed_at) : '',
         Comments: (o.comment_logs || []).sort((a, b) => a.created_at.localeCompare(b.created_at))
           .map((c) => `[${c.user?.name || '?'} ${fmtDateTime(c.created_at)}] ${c.comment}`).join(' | ') || o.comments || '',
@@ -78,7 +78,7 @@ export default function ReportsPage() {
         <div><label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Status</label>
           <select className="input py-2" value={f.status} onChange={set('status')}><option value="">All</option>{Object.keys(STATUS).map((k) => <option key={k} value={k}>{STATUS[k].label}</option>)}</select></div>
         <div><label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Technician</label>
-          <select className="input py-2" value={f.tech} onChange={set('tech')}><option value="">All</option><option value="none">Unassigned</option>{techs.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+          <select className="input py-2" value={f.tech} onChange={set('tech')}><option value="">All</option><option value="none">Unassigned</option>{techs.map((t) => <option key={t.id} value={t.id}>{techLabel(t)}</option>)}</select></div>
         <button onClick={() => setActive(f)} className="btn-primary text-xs py-2.5"><Search size={12} /> Retrieve</button>
       </div>
 

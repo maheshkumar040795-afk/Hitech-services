@@ -28,6 +28,8 @@ export function errMsg(e) {
   if (m.includes('User is banned')) return 'This login has been disabled. Contact the office.'
   if (m.includes('Failed to fetch') || m.includes('NetworkError')) return 'No internet connection. Please try again.'
   if (m.startsWith('UPLOAD_LOCKED:')) return m.replace('UPLOAD_LOCKED:', '').trim()
+  if (m.includes('technicians_code_uq')) return 'This Technician ID is already given to another technician'
+  if (m.includes('technicians_code_check')) return 'Technician ID can only use letters, numbers, - or / (max 20)'
   if (m.includes('duplicate key') && m.includes('technicians_name_ci')) return 'A technician with this name already exists'
   if (m.includes('duplicate key') && m.includes('mobile')) return 'This mobile number is already used by another technician'
   if (m.includes('technicians_mobile_check')) return 'Mobile must be a valid 10-digit number'

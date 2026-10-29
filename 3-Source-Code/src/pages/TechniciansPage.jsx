@@ -1,17 +1,17 @@
 import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Search, MapPin, Phone, X, Upload, Download, Smartphone, KeyRound, Ban, Pencil, Copy, MessageCircle, Power, ClipboardList } from 'lucide-react'
+import { Plus, Search, MapPin, Phone, X, BadgeCheck, Upload, Download, Smartphone, KeyRound, Ban, Pencil, Copy, MessageCircle, Power, ClipboardList } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { supabase, rpc, errMsg, adminAction } from '../lib/supabase'
-import { fmtMoney, todayIST, waUrl } from '../lib/format'
+import { fmtMoney, todayIST, waUrl, techLabel } from '../lib/format'
 import { downloadXlsx, readSheetRows } from '../lib/excel'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
 import { useTechnicians, useTechStats } from '../hooks/useData'
 import Modal, { Field } from '../components/Modal'
 
-const EMPTY = { name: '', mobile: '', city: '', district: '', pincode: '', aadhar: '' }
+const EMPTY = { tech_code: '', name: '', mobile: '', city: '', district: '', pincode: '', aadhar: '' }
 const loginState = (t) => (!t.user_id ? 'off' : t.login?.is_active ? 'on' : 'disabled')
 const appUrl = () => `${window.location.origin}${window.location.pathname}#/tech`
 
@@ -24,21 +24,28 @@ function TechForm({ tech, onClose, onSaved }) {
     e.preventDefault()
     const row = Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v.trim() || null]))
     if (row.mobile) row.mobile = row.mobile.replace(/\D/g, '').slice(-10)
+    // Technician ID: blank → database gives the next free ID (new) or keeps the current one (edit)
+    if (row.tech_code) row.tech_code = row.tech_code.toUpperCase().replace(/\s+/g, '')
+    else delete row.tech_code
+    if (row.tech_code && !/^[A-Z0-9/-]{1,20}$/.test(row.tech_code)) return toast('Technician ID can only use letters, numbers, - or / (max 20)', 'error')
     if (row.mobile && !/^[6-9]\d{9}$/.test(row.mobile)) return toast('Mobile must be a valid 10-digit number', 'error')
     setBusy(true)
-    const { error } = tech
-      ? await supabase.from('technicians').update(row).eq('id', tech.id)
-      : await supabase.from('technicians').insert(row)
+    const { data: saved, error } = tech
+      ? await supabase.from('technicians').update(row).eq('id', tech.id).select().maybeSingle()
+      : await supabase.from('technicians').insert(row).select().maybeSingle()
     setBusy(false)
     if (error) return toast(errMsg(error), 'error')
-    toast(tech ? 'Technician updated' : 'Technician added', 'success')
+    toast(tech ? 'Technician updated' : `Technician added${saved?.tech_code ? ` — ID ${saved.tech_code}` : ''}`, 'success')
     if (tech?.user_id && tech.mobile !== row.mobile) toast('Mobile changed — use "Reset PIN" so the new number works for app login', 'info', 7000)
     onSaved(); onClose()
   }
   return (
     <Modal title={tech ? 'Edit technician' : 'Add technician'} onClose={onClose}>
       <form onSubmit={save} className="grid grid-cols-2 gap-3">
-        <div className="col-span-2"><Field label="Name *"><input className="input" value={f.name} onChange={set('name')} required /></Field></div>
+        <Field label="Technician ID" hint={tech ? 'Unique. Leave blank to keep the current ID.' : 'Unique. Leave blank to get the next ID (HT001, HT002…).'}>
+          <input className="input font-mono uppercase" placeholder={tech?.tech_code || 'Auto'} maxLength={20} value={f.tech_code} onChange={set('tech_code')} />
+        </Field>
+        <Field label="Name *"><input className="input" value={f.name} onChange={set('name')} required /></Field>
         <Field label="Mobile (app login)" hint="10 digits, used to log in"><input className="input" inputMode="numeric" value={f.mobile} onChange={set('mobile')} /></Field>
         <Field label="Aadhaar"><input className="input" value={f.aadhar} onChange={set('aadhar')} /></Field>
         <Field label="City / Area"><input className="input" value={f.city} onChange={set('city')} /></Field>
@@ -84,7 +91,7 @@ function LoginModal({ tech, onClose, onSaved }) {
         </form>
       ) : (
         <div className="space-y-4">
-          <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-sm text-emerald-800">Login ready. Send these details to {tech.name}:</div>
+          <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-sm text-emerald-800">Login ready. Send these details to {techLabel(tech)}:</div>
           <pre className="text-xs bg-slate-50 border border-slate-200 rounded-xl p-3 whitespace-pre-wrap font-sans">{message}</pre>
           <div className="flex gap-2 justify-end">
             <button className="btn-secondary text-xs" onClick={() => { navigator.clipboard?.writeText(message); toast('Copied', 'success') }}><Copy size={13} /> Copy</button>
@@ -128,6 +135,7 @@ function TechProfile({ tech, stat, onClose, onEdit, onLogin, refresh }) {
           <div className="w-14 h-14 rounded-2xl bg-brand-100 flex items-center justify-center text-brand-700 font-bold text-xl flex-shrink-0">{tech.name[0]}</div>
           <div className="flex-1 min-w-0">
             <h2 className="text-base font-bold text-slate-900">{tech.name}</h2>
+            {tech.tech_code && <p className="text-xs font-mono font-semibold text-brand-700 flex items-center gap-1 mt-0.5"><BadgeCheck size={12} /> ID {tech.tech_code}</p>}
             {tech.mobile && <p className="text-sm text-slate-500 flex items-center gap-1 mt-0.5"><Phone size={12} /> {tech.mobile}</p>}
             {(tech.city || tech.district) && <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5"><MapPin size={11} /> {[tech.city, tech.district, tech.pincode].filter(Boolean).join(', ')}</p>}
           </div>
@@ -206,7 +214,7 @@ export default function TechniciansPage() {
   const refresh = () => { qc.invalidateQueries({ queryKey: ['technicians'] }); qc.invalidateQueries({ queryKey: ['tech-stats'] }) }
   const q = search.toLowerCase()
   const list = techs.filter((t) => (showInactive || t.is_active) &&
-    (!q || t.name.toLowerCase().includes(q) || t.city?.toLowerCase().includes(q) || t.mobile?.includes(q)))
+    (!q || t.name.toLowerCase().includes(q) || t.tech_code?.toLowerCase().includes(q) || t.city?.toLowerCase().includes(q) || t.mobile?.includes(q)))
   const profileTech = techs.find((t) => t.id === profileId)
 
   const importFile = async (e) => {
@@ -220,8 +228,9 @@ export default function TechniciansPage() {
         const get = (k) => String(r[k] ?? r[k.toLowerCase()] ?? '').trim()
         const name = get('NAME'); if (!name) continue
         const mobile = get('MOBILE').replace(/\D/g, '').slice(-10) || null
+        const code = get('ID').toUpperCase().replace(/\s+/g, '')
         const { error } = await supabase.from('technicians').insert({
-          name, mobile: mobile && /^[6-9]\d{9}$/.test(mobile) ? mobile : null,
+          ...(code ? { tech_code: code } : {}), name, mobile: mobile && /^[6-9]\d{9}$/.test(mobile) ? mobile : null,
           city: get('CITY') || null, district: get('DISTRICT') || null, pincode: get('PINCODE') || null, state: get('STATE') || 'Tamil Nadu',
         })
         error ? skipped++ : added++
@@ -232,7 +241,7 @@ export default function TechniciansPage() {
 
   const exportAll = () => downloadXlsx(`technicians-${todayIST()}.xlsx`, [{ name: 'Technicians', rows: techs.map((t) => {
     const s = stats[t.id] || {}
-    return { Name: t.name, Mobile: t.mobile || '', City: t.city || '', District: t.district || '', Pincode: t.pincode || '',
+    return { 'Technician ID': t.tech_code || '', Name: t.name, Mobile: t.mobile || '', City: t.city || '', District: t.district || '', Pincode: t.pincode || '',
       Status: t.is_active ? 'Active' : 'Inactive', 'App Login': { on: 'Active', off: 'Not set up', disabled: 'Disabled' }[loginState(t)],
       'Total Orders': Number(s.total || 0), Completed: Number(s.completed || 0), Pending: Number(s.pending || 0), Rejected: Number(s.rejected || 0),
       'Amount Collected': Number(s.amount || 0) }
@@ -252,7 +261,7 @@ export default function TechniciansPage() {
           <p className="text-sm text-slate-500 mt-0.5">{techs.filter((t) => t.is_active).length} active · {techs.filter((t) => loginState(t) === 'on').length} using the app</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <button onClick={() => downloadXlsx('technicians-template.xlsx', [{ name: 'Technicians', rows: [{ NAME: 'Abinesh', MOBILE: '9841100001', CITY: 'Kanchipuram', DISTRICT: 'Kanchipuram', PINCODE: '631502', STATE: 'Tamil Nadu' }] }])} className="btn-secondary text-xs"><Download size={13} /> Template</button>
+          <button onClick={() => downloadXlsx('technicians-template.xlsx', [{ name: 'Technicians', rows: [{ ID: '', NAME: 'Abinesh', MOBILE: '9841100001', CITY: 'Kanchipuram', DISTRICT: 'Kanchipuram', PINCODE: '631502', STATE: 'Tamil Nadu' }] }])} className="btn-secondary text-xs"><Download size={13} /> Template</button>
           <button onClick={() => fileRef.current?.click()} disabled={busy} className="btn-secondary text-xs"><Upload size={13} /> {busy ? 'Importing…' : 'Import'}</button>
           {isAdmin && <button onClick={exportAll} className="btn-secondary text-xs"><Download size={13} /> Export</button>}
           <button onClick={() => setForm('new')} className="btn-primary text-xs"><Plus size={13} /> Add Technician</button>
@@ -262,7 +271,7 @@ export default function TechniciansPage() {
       <div className="flex gap-3 items-center flex-wrap">
         <div className="relative flex-1 min-w-52">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input className="input pl-9 py-2" placeholder="Search name, city or mobile…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input className="input pl-9 py-2" placeholder="Search ID, name, city or mobile…" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
         <label className="text-xs text-slate-600 flex items-center gap-1.5"><input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} /> Show inactive</label>
       </div>
@@ -281,7 +290,7 @@ export default function TechniciansPage() {
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="w-10 h-10 rounded-xl bg-brand-100 flex items-center justify-center text-brand-700 font-bold flex-shrink-0">{t.name[0]}</div>
                     <div className="min-w-0">
-                      <p className="font-semibold text-sm text-slate-900 truncate">{t.name}</p>
+                      <p className="font-semibold text-sm text-slate-900 truncate">{t.name}{t.tech_code && <span className="ml-1.5 text-[10px] font-mono font-semibold text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded">{t.tech_code}</span>}</p>
                       <p className="text-xs text-slate-400 flex items-center gap-1">{t.mobile ? <><Phone size={10} />{t.mobile}</> : <span className="text-amber-600">No mobile</span>}</p>
                     </div>
                   </div>

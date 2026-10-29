@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import { Search, Upload, Download, Eye, MessageSquare, X, ChevronLeft, ChevronRight, Plus, FileDown, Trash2, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { supabase, rpc, errMsg, fetchAll, safeSearch } from '../lib/supabase'
-import { fmtDate, fmtDateTime, STATUS, todayIST } from '../lib/format'
+import { fmtDate, fmtDateTime, STATUS, todayIST, techLabel } from '../lib/format'
 import { parseOrdersFile, downloadOrdersTemplate, downloadXlsx } from '../lib/excel'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
@@ -120,7 +120,7 @@ function NewOrderModal({ techs, onClose, onSaved }) {
         <div className="col-span-2"><Field label="Assign Technician">
           <select className="input" value={f.technician_id} onChange={set('technician_id')}>
             <option value="">— Unassigned —</option>
-            {techs.filter((t) => t.is_active).map((t) => <option key={t.id} value={t.id}>{t.name}{t.city ? ` · ${t.city}` : ''}</option>)}
+            {techs.filter((t) => t.is_active).map((t) => <option key={t.id} value={t.id}>{techLabel(t)}{t.city ? ` · ${t.city}` : ''}</option>)}
           </select></Field></div>
         <div className="col-span-2 flex justify-end gap-2 pt-2">
           <button type="button" onClick={onClose} className="btn-secondary text-xs">Cancel</button>
@@ -190,7 +190,7 @@ export default function OrdersPage() {
       downloadXlsx(`hitech-orders-${todayIST()}.xlsx`, [{ name: 'Orders', rows: rows.map((o) => ({
         Date: fmtDate(o.order_date), 'Order ID': o.order_id, 'Customer Name': o.customer_name, 'Phone No': o.phone_no || '',
         Service: o.service || '', Brand: o.brand || '', Location: o.location || '', Address: o.address || '', 'Pin Code': o.pin_code || '',
-        Technician: o.technician?.name || 'Unassigned', Status: o.status, Amount: Number(o.cod_amount || 0), Comments: o.comments || '',
+        'Technician ID': techs.find((t) => t.id === o.technician_id)?.tech_code || '', Technician: o.technician?.name || 'Unassigned', Status: o.status, Amount: Number(o.cod_amount || 0), Comments: o.comments || '',
         'Modified By': o.modifier?.name || '', 'Modified At': o.modified_at ? fmtDateTime(o.modified_at) : '',
       })) }])
     } catch (e) { toast(errMsg(e), 'error') } finally { setBusy(false) }
@@ -232,7 +232,7 @@ export default function OrdersPage() {
         </select>
         <select className="input w-auto py-2" value={f.tech} onChange={setFilter('tech')}>
           <option value="">All technicians</option><option value="none">⚠ Unassigned</option>
-          {techs.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          {techs.map((t) => <option key={t.id} value={t.id}>{techLabel(t)}</option>)}
         </select>
         <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-3 py-1.5">
           <input type="date" className="text-xs outline-none" value={f.from} onChange={setFilter('from')} title="From date" />
@@ -247,7 +247,7 @@ export default function OrdersPage() {
           <span className="text-sm font-semibold text-brand-700 mr-2">{selected.size} selected</span>
           <select className="input w-auto py-1.5 text-xs" value={bulkTech} onChange={(e) => setBulkTech(e.target.value)}>
             <option value="">Assign to…</option><option value="none">— Unassign —</option>
-            {activeTechs.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            {activeTechs.map((t) => <option key={t.id} value={t.id}>{techLabel(t)}</option>)}
           </select>
           <button disabled={!bulkTech || busy} className="btn-primary text-xs py-1.5"
             onClick={() => update([...selected], { technician_id: bulkTech === 'none' ? null : bulkTech }, `${selected.size} orders ${bulkTech === 'none' ? 'unassigned' : 'assigned'}`).then(() => { setSelected(new Set()); setBulkTech('') })}>Assign</button>
@@ -296,11 +296,11 @@ export default function OrdersPage() {
                       <select value={o.technician_id || ''} disabled={busy}
                         onChange={(e) => {
                           const t = techs.find((x) => x.id === e.target.value)
-                          update([o.id], { technician_id: e.target.value || null }, t ? `${o.order_id} assigned to ${t.name}` : `${o.order_id} unassigned`)
+                          update([o.id], { technician_id: e.target.value || null }, t ? `${o.order_id} assigned to ${techLabel(t)}` : `${o.order_id} unassigned`)
                         }}
                         className={`text-[11px] px-2 py-1 rounded-lg border max-w-[130px] ${o.technician_id ? 'border-slate-200 bg-white text-slate-700' : 'border-red-200 bg-red-50 text-red-600 font-semibold'}`}>
                         <option value="">Unassigned</option>
-                        {techs.filter((t) => t.is_active || t.id === o.technician_id).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        {techs.filter((t) => t.is_active || t.id === o.technician_id).map((t) => <option key={t.id} value={t.id}>{techLabel(t)}</option>)}
                       </select>
                     </td>
                     <td className="px-3 py-2">

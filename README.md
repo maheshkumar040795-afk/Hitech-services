@@ -138,3 +138,16 @@ Only **ORDER ID** and **CUSTOMER NAME** are required. Download **Template** on t
 ## Known limits
 - Alerts arrive while HT Jobs is **open** (or when it's reopened). Phone push notifications with the app closed are not included.
 - Actions need internet. With no signal, the app says so and nothing is lost; submit again when back online.
+
+---
+
+## Update — Oct 2026: Technician ID + keep-alive
+
+**Run once:** Supabase → SQL Editor → paste `2-Supabase-Setup/update-2026-10-technician-id.sql` → **Run**.
+(Fresh installs don't need it — `schema.sql` already includes it.)
+
+- Every technician has a unique **Technician ID** (HT001, HT002 …). Existing technicians are numbered oldest first.
+- Add / Edit technician: type an ID, or leave it blank to get the next free one. Duplicates are refused.
+- The ID shows on technician cards, profile, assign drop-downs, order details, Excel exports and in the HT Jobs app.
+- Technician Excel import accepts an optional **ID** column. In the order upload sheet, the **TECHNICIAN** column can be the ID or the name.
+- `.github/workflows/keep-alive.yml` pings the database every 3 days so the free Supabase project is not auto-paused. It is not part of the website.

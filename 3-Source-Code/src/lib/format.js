@@ -73,3 +73,6 @@ export function amountToWords(total) {
   const ps = Math.round((total - rs) * 100)
   return (rs ? words(rs) + ' Rupees' : '') + (ps ? (rs ? ' and ' : '') + words(ps) + ' Paise' : '') + ' Only'
 }
+
+/** "HT001 · Abinesh" (just the name until the Technician ID update has been run) */
+export const techLabel = (t) => (t ? (t.tech_code ? `${t.tech_code} · ${t.name}` : t.name) : '')
