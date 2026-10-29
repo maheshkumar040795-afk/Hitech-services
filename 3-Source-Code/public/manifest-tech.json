@@ -3,7 +3,7 @@
   "name": "HT Jobs – Hitech Services",
   "short_name": "HT Jobs",
   "description": "Technician app: see your assigned jobs and mark them completed",
-  "start_url": "./#/tech",
+  "start_url": "./tech/",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",

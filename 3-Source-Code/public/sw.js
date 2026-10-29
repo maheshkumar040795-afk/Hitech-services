@@ -1,6 +1,6 @@
 /* Hitech Services service worker — makes the app installable; job data is never cached */
 const CACHE = 'hitech-v4'
-const SHELL = ['./', './index.html', './offline.html', './config.js', './manifest.json', './manifest-tech.json', './logo.png', './logo-160.png']
+const SHELL = ['./', './index.html', './offline.html', './config.js', './manifest.json', './manifest-tech.json', './logo.png', './logo-160.png', './tech/']
 
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL))) })
 self.addEventListener('activate', (e) => {

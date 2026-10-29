@@ -20,24 +20,22 @@
 
     <!-- Technician links (…/#/tech) install as a separate "HT Jobs" app -->
     <script>
-      // Office and technician pages install as two different apps (Hitech Ops / HT Jobs).
-      // Re-applied on every route change so iPhone "Add to Home Screen" always picks the right name, icon and start page.
+      // Two apps from one site:
+      //   office      → …/            (Hitech Ops)
+      //   technicians → …/tech/       (HT Jobs) — a real folder, not just "#/tech", because iPhone
+      //                                 drops the "#…" part when a page is added to the Home Screen.
       (function () {
-        function apply() {
-          var tech = location.hash.indexOf('#/tech') === 0
-          document.getElementById('app-manifest').href = tech ? './manifest-tech.json' : './manifest.json'
-          document.getElementById('app-theme').content = tech ? '#0b1122' : '#1d55e0'
-          document.getElementById('app-title').content = tech ? 'HT Jobs' : 'Hitech Ops'
-          document.getElementById('app-touch-icon').href = tech ? './icons/tech-apple-touch-icon.png' : './icons/apple-touch-icon.png'
-          document.title = tech ? 'HT Jobs — Hitech Services' : 'Hitech Services — Operations'
-        }
-        apply()
-        window.addEventListener('hashchange', apply)
-        window.addEventListener('popstate', apply)
-        ;['pushState', 'replaceState'].forEach(function (k) {   // in-app navigation (router links)
-          var orig = history[k]
-          history[k] = function () { var r = orig.apply(this, arguments); apply(); return r }
-        })
+        var TECH = !!window.HT_TECH_ENTRY            // set only in tech/index.html
+        var B = TECH ? '../' : './'
+        // Old links (…/#/tech, …/#/tech/login) → move to the technician folder so Add to Home Screen saves …/tech/
+        if (!TECH && location.hash.indexOf('#/tech') === 0) { location.replace(B + 'tech/' + location.hash); return }
+        // Technician folder always shows the technician app
+        if (TECH && location.hash.indexOf('#/tech') !== 0) history.replaceState(null, '', '#/tech')
+        document.getElementById('app-manifest').href = B + (TECH ? 'manifest-tech.json' : 'manifest.json')
+        document.getElementById('app-theme').content = TECH ? '#0b1122' : '#1d55e0'
+        document.getElementById('app-title').content = TECH ? 'HT Jobs' : 'Hitech Ops'
+        document.getElementById('app-touch-icon').href = B + 'icons/' + (TECH ? 'tech-apple-touch-icon.png' : 'apple-touch-icon.png')
+        document.title = TECH ? 'HT Jobs — Hitech Services' : 'Hitech Services — Operations'
       })()
     </script>
     <script defer src="./assets/app.js"></script>

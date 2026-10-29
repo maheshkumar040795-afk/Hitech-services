@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>HT Jobs — Hitech Services</title>
+
+    <link rel="manifest" id="app-manifest" href="../manifest-tech.json" />
+    <meta name="theme-color" id="app-theme" content="#1d55e0" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" id="app-title" content="HT Jobs" />
+    <link rel="apple-touch-icon" id="app-touch-icon" href="../icons/tech-apple-touch-icon.png" />
+    <link rel="icon" type="image/png" href="../icons/icon-192.png" />
+
+    <!-- Supabase keys live here (edit config.js, no rebuild needed) -->
+    <script>window.HT_TECH_ENTRY = true</script>
+    <script src="../config.js"></script>
+
+    <!-- Technician links (…/#/tech) install as a separate "HT Jobs" app -->
+    <script>
+      // Two apps from one site:
+      //   office      → …/            (Hitech Ops)
+      //   technicians → …/tech/       (HT Jobs) — a real folder, not just "#/tech", because iPhone
+      //                                 drops the "#…" part when a page is added to the Home Screen.
+      (function () {
+        var TECH = !!window.HT_TECH_ENTRY            // set only in tech/index.html
+        var B = TECH ? '../' : './'
+        // Old links (…/#/tech, …/#/tech/login) → move to the technician folder so Add to Home Screen saves …/tech/
+        if (!TECH && location.hash.indexOf('#/tech') === 0) { location.replace(B + 'tech/' + location.hash); return }
+        // Technician folder always shows the technician app
+        if (TECH && location.hash.indexOf('#/tech') !== 0) history.replaceState(null, '', '#/tech')
+        document.getElementById('app-manifest').href = B + (TECH ? 'manifest-tech.json' : 'manifest.json')
+        document.getElementById('app-theme').content = TECH ? '#0b1122' : '#1d55e0'
+        document.getElementById('app-title').content = TECH ? 'HT Jobs' : 'Hitech Ops'
+        document.getElementById('app-touch-icon').href = B + 'icons/' + (TECH ? 'tech-apple-touch-icon.png' : 'apple-touch-icon.png')
+        document.title = TECH ? 'HT Jobs — Hitech Services' : 'Hitech Services — Operations'
+      })()
+    </script>
+    <script defer src="../assets/app.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    </body>
+</html>

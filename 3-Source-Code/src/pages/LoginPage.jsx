@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
 import { Eye, EyeOff, AlertCircle, Smartphone, Mail, Lock, ArrowRight, Loader2, ShieldCheck, Zap, Users2, BarChart3 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import Logo from '../components/Logo'
@@ -94,9 +93,9 @@ export default function LoginPage() {
               </button>
             </form>
           </div>
-          <Link to="/tech/login" className="mt-6 flex items-center justify-center gap-2 text-sm font-medium text-slate-500 hover:text-brand-700 transition-colors">
+          <a href="./tech/" className="mt-6 flex items-center justify-center gap-2 text-sm font-medium text-slate-500 hover:text-brand-700 transition-colors">
             <Smartphone size={14} /> Technician? Open the HT Jobs app
-          </Link>
+          </a>
         </div>
       </div>
     </div>

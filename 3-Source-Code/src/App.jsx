@@ -1,8 +1,8 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { ToastProvider } from './context/ToastContext'
 import { CONFIG_MISSING } from './lib/supabase'
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import PWABanners from './components/ui/PWABanners'
 import TechLogin from './tech/TechLogin'
 import TechApp from './tech/TechApp'
@@ -18,6 +18,10 @@ const TechniciansPage = lazy(() => import('./pages/TechniciansPage'))
 const AuditPage = lazy(() => import('./pages/AuditPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const BillingPage = lazy(() => import('./pages/BillingPage'))
+const IdCardsPage = lazy(() => import('./pages/IdCardsPage'))
+
+/** true when running from …/tech/ (the HT Jobs app) */
+const TECH_ENTRY = typeof window !== 'undefined' && !!window.HT_TECH_ENTRY
 
 function Splash({ text = 'Loading…' }) {
   return (
@@ -41,11 +45,42 @@ function OfficeRoute({ children, adminOnly = false }) {
 }
 
 function TechRoute({ children }) {
-  const { user, loading, isTech } = useAuth()
+  const { user, loading, isTech, logout } = useAuth()
   if (loading) return <Splash text="Loading your jobs…" />
   if (!user) return <Navigate to="/tech/login" replace />
-  if (!isTech) return <Navigate to="/" replace />
+  if (!isTech) {
+    if (!TECH_ENTRY) return <Navigate to="/" replace />
+    // An office login opened the technician app: don't show office screens here
+    return (
+      <div className="flex h-screen items-center justify-center p-6 bg-[#f1f3fa]">
+        <div className="card p-6 max-w-sm text-center space-y-3">
+          <p className="font-heading font-bold text-slate-900">This is the HT Jobs technician app</p>
+          <p className="text-sm text-slate-500">Office accounts can't use it. Sign out and log in with a technician mobile number.</p>
+          <button onClick={logout} className="btn-primary w-full justify-center">Sign out</button>
+        </div>
+      </div>
+    )
+  }
   return children
+}
+
+/** On the office site, technician pages move to the …/tech/ folder (the HT Jobs app) */
+function GoToTechApp() {
+  const { pathname } = useLocation()
+  useEffect(() => { window.location.replace(`./tech/#${pathname}`) }, [pathname])
+  return <Splash text="Opening HT Jobs…" />
+}
+
+/** HT Jobs (…/tech/): technician screens only — never the office login */
+function TechOnlyRoutes() {
+  const { user, loading } = useAuth()
+  return (
+    <Routes>
+      <Route path="/tech/login" element={!loading && user ? <Navigate to="/tech" replace /> : <TechLogin />} />
+      <Route path="/tech" element={<TechRoute><TechApp /></TechRoute>} />
+      <Route path="*" element={<Navigate to="/tech" replace />} />
+    </Routes>
+  )
 }
 
 function AppRoutes() {
@@ -54,8 +89,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={!loading && user ? <Navigate to={home} replace /> : <LoginPage />} />
-      <Route path="/tech/login" element={!loading && user ? <Navigate to={home} replace /> : <TechLogin />} />
-      <Route path="/tech" element={<TechRoute><TechApp /></TechRoute>} />
+      <Route path="/tech/*" element={<GoToTechApp />} />
 
       <Route path="/" element={<OfficeRoute><AppShell /></OfficeRoute>}>
         <Route index element={<DashboardPage />} />
@@ -66,6 +100,7 @@ function AppRoutes() {
         <Route path="reports" element={<OfficeRoute adminOnly><ReportsPage /></OfficeRoute>} />
         <Route path="audit" element={<OfficeRoute adminOnly><AuditPage /></OfficeRoute>} />
         <Route path="users" element={<OfficeRoute adminOnly><UsersPage /></OfficeRoute>} />
+        <Route path="id-cards" element={<OfficeRoute adminOnly><IdCardsPage /></OfficeRoute>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
@@ -89,7 +124,7 @@ export default function App() {
       <ToastProvider>
         <PWABanners />
         <Suspense fallback={<Splash />}>
-          <AppRoutes />
+          {TECH_ENTRY ? <TechOnlyRoutes /> : <AppRoutes />}
         </Suspense>
       </ToastProvider>
     </AuthProvider>

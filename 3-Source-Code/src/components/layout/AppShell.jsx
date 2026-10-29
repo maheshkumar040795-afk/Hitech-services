@@ -1,13 +1,14 @@
-import { useState, Suspense } from 'react'
+import { useState, Suspense, useEffect, useRef } from 'react'
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   LayoutDashboard, ClipboardList, Wrench, FileBarChart2, History, Users, Settings,
-  LogOut, ChevronLeft, ChevronRight, Wifi, WifiOff, Receipt, Menu, X,
+  LogOut, Contact2 as IdCard, ChevronLeft, ChevronRight, Wifi, WifiOff, Receipt, Menu, X,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { useOrdersRealtime } from '../../hooks/useRealtime'
+import { usePinResets } from '../../hooks/useData'
 import Logo from '../Logo'
 
 const NAV_ITEMS = [
@@ -18,6 +19,7 @@ const NAV_ITEMS = [
   { to: '/reports',     label: 'Reports',     icon: FileBarChart2, adminOnly: true },
   { to: '/audit',       label: 'Audit Log',   icon: History,       adminOnly: true },
   { to: '/users',       label: 'Users',       icon: Users,         adminOnly: true },
+  { to: '/id-cards',    label: 'ID Cards',    icon: IdCard,        adminOnly: true },
   { to: '/settings',    label: 'Settings',    icon: Settings },
 ]
 
@@ -49,6 +51,15 @@ export default function AppShell() {
       }
     },
   })
+
+  // Technicians' "Forgot PIN" requests → red badge on Technicians + a toast when a new one arrives
+  const { data: pinResets = [] } = usePinResets(isAdmin)
+  const seenResets = useRef(null)
+  useEffect(() => {
+    const ids = pinResets.map((r) => r.id + r.created_at)
+    if (seenResets.current && ids.some((id) => !seenResets.current.includes(id))) toast('A technician forgot their PIN — see Technicians', 'info', 7000)
+    seenResets.current = ids
+  }, [pinResets, toast])
 
   const handleLogout = async () => { await logout(); navigate('/login') }
   const items = NAV_ITEMS.filter((i) => !i.adminOnly || isAdmin)
@@ -84,6 +95,9 @@ export default function AppShell() {
             {isActive && <span className="absolute -left-2.5 top-2 bottom-2 w-1 rounded-r-full bg-sky-400 shadow-[0_0_12px_rgba(56,189,248,.9)]" />}
             <item.icon size={17} className={`flex-shrink-0 transition-transform duration-200 ${isActive ? '' : 'group-hover:scale-110'}`} />
             {(!collapsed || mobile) && <span className="truncate">{item.label}</span>}
+            {item.to === '/technicians' && pinResets.length > 0 && (
+              <span title="Forgot PIN requests" className={`${collapsed && !mobile ? 'absolute top-1 right-1' : 'ml-auto'} min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[11px] font-bold flex items-center justify-center ring-2 ring-ink-900`}>{pinResets.length}</span>
+            )}
             </>}
           </NavLink>
         ))}

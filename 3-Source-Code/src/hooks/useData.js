@@ -39,3 +39,30 @@ export function useAppSettings() {
     staleTime: 300_000,
   })
 }
+
+/** Open "Forgot PIN" requests from technicians (empty until update-2026-10-forgot-pin.sql has been run) */
+export function usePinResets(enabled = true) {
+  return useQuery({
+    queryKey: ['pin-resets'],
+    enabled,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('pin_reset_requests')
+        .select('id, technician_id, mobile, created_at')
+        .eq('status', 'OPEN')
+        .order('created_at', { ascending: false })
+      if (error) return []   // table not created yet → just show nothing
+      return data
+    },
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+  })
+}
+
+/** Mark a technician's open PIN requests as handled */
+export async function resolvePinResets(technicianId, status = 'DONE') {
+  const { data: { user } } = await supabase.auth.getUser()
+  await supabase.from('pin_reset_requests')
+    .update({ status, resolved_at: new Date().toISOString(), resolved_by: user?.id || null })
+    .eq('technician_id', technicianId).eq('status', 'OPEN')
+}

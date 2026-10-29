@@ -151,3 +151,11 @@ Only **ORDER ID** and **CUSTOMER NAME** are required. Download **Template** on t
 - The ID shows on technician cards, profile, assign drop-downs, order details, Excel exports and in the HT Jobs app.
 - Technician Excel import accepts an optional **ID** column. In the order upload sheet, the **TECHNICIAN** column can be the ID or the name.
 - `.github/workflows/keep-alive.yml` pings the database every 3 days so the free Supabase project is not auto-paused. It is not part of the website.
+
+## Update — Oct 2026 (2): HT Jobs folder, Forgot PIN, ID Cards
+
+**Run once:** Supabase → SQL Editor → paste `2-Supabase-Setup/update-2026-10-forgot-pin.sql` → **Run**.
+
+- **Technician app link is now `…/tech/`** (a real folder). iPhone drops the `#…` part of a link when adding to the Home Screen, so the old `…/#/tech` icon opened the office login. Old links redirect automatically. The HT Jobs app never shows the office login.
+- **Forgot PIN:** HT Jobs login → Forgot PIN? → request goes to the office (red badge on *Technicians* + banner). Admin taps **Reset PIN & send** → new PIN on WhatsApp. Technicians can also WhatsApp/call the office (phone from *Settings → Company phone*).
+- **ID Cards** (admin menu): the ID card generator (`1-Website/id-cards.html`, history stored in its own Firebase project). "Fill from technician" copies name, Technician ID and mobile.

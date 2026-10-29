@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
 import { AlertCircle, Eye, EyeOff, Download, Share } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { usePWA } from '../hooks/usePWA'
 import Logo from '../components/Logo'
+import ForgotPinSheet from './ForgotPinSheet'
 
 import IOSInstallSheet, { isIOS } from '../components/ui/IOSInstallSheet'
 
@@ -16,6 +16,7 @@ export default function TechLogin() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [iosHelp, setIosHelp] = useState(false)
+  const [forgot, setForgot] = useState(false)
 
   const submit = async (e) => {
     e.preventDefault()
@@ -65,7 +66,7 @@ export default function TechLogin() {
           <button disabled={busy} className="btn-primary w-full justify-center py-4 rounded-2xl text-base font-bold">
             {busy ? 'Logging in…' : 'Login'}
           </button>
-          <p className="text-xs text-slate-400 text-center">Forgot PIN? Call the office to reset it.</p>
+          <button type="button" onClick={() => setForgot(true)} className="block mx-auto text-sm font-semibold text-brand-700 py-1 active:opacity-60">Forgot PIN?</button>
         </form>
 
         {!isInstalled && (
@@ -84,8 +85,8 @@ export default function TechLogin() {
           </div>
         )}
       </div>
+      {forgot && <ForgotPinSheet initialMobile={mobile} onClose={() => setForgot(false)} />}
       {iosHelp && <IOSInstallSheet appName="HT Jobs" onClose={() => setIosHelp(false)} />}
-      <Link to="/login" className="relative text-center text-xs text-slate-500 pb-6" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1.5rem)' }}>Office login</Link>
     </div>
   )
 }

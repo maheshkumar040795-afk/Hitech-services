@@ -33,7 +33,8 @@ export function usePWA() {
 
     // ── Register service worker ──
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-      navigator.serviceWorker.register('./sw.js', { scope: './' })
+      const base = window.HT_TECH_ENTRY ? '../' : './'   // technician app runs from …/tech/
+      navigator.serviceWorker.register(base + 'sw.js', { scope: base })
         .then(reg => {
           swRegistration.current = reg
           setSwReady(true)

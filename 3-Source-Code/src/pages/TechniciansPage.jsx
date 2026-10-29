@@ -8,12 +8,13 @@ import { fmtMoney, todayIST, waUrl, techLabel } from '../lib/format'
 import { downloadXlsx, readSheetRows } from '../lib/excel'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
-import { useTechnicians, useTechStats } from '../hooks/useData'
+import { useTechnicians, useTechStats, usePinResets, resolvePinResets } from '../hooks/useData'
 import Modal, { Field } from '../components/Modal'
 
 const EMPTY = { tech_code: '', name: '', mobile: '', city: '', district: '', pincode: '', aadhar: '' }
 const loginState = (t) => (!t.user_id ? 'off' : t.login?.is_active ? 'on' : 'disabled')
-const appUrl = () => `${window.location.origin}${window.location.pathname}#/tech`
+// Technician app link: …/tech/ (a real folder, so iPhone Home Screen icons open HT Jobs)
+const appUrl = () => `${window.location.origin}${window.location.pathname.replace(/[^/]*$/, '')}tech/`
 
 function TechForm({ tech, onClose, onSaved }) {
   const { toast } = useToast()
@@ -70,7 +71,7 @@ function LoginModal({ tech, onClose, onSaved }) {
     e.preventDefault()
     if (pin.length < 6) return toast('PIN must be at least 6 characters', 'error')
     setBusy(true)
-    try { await adminAction('set_tech_login', { technician_id: tech.id, password: pin }); setDone(true); onSaved() }
+    try { await adminAction('set_tech_login', { technician_id: tech.id, password: pin }); await resolvePinResets(tech.id).catch(() => {}); setDone(true); onSaved() }
     catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
   }
   return (
@@ -211,7 +212,10 @@ export default function TechniciansPage() {
   const [loginFor, setLoginFor] = useState(null)
   const [busy, setBusy] = useState(false)
 
-  const refresh = () => { qc.invalidateQueries({ queryKey: ['technicians'] }); qc.invalidateQueries({ queryKey: ['tech-stats'] }) }
+  const { data: pinResets = [] } = usePinResets(isAdmin)
+  const refresh = () => { qc.invalidateQueries({ queryKey: ['technicians'] }); qc.invalidateQueries({ queryKey: ['tech-stats'] }); qc.invalidateQueries({ queryKey: ['pin-resets'] }) }
+  const dismissReset = async (techId) => { await resolvePinResets(techId, 'CANCELLED').catch(() => {}); refresh() }
+  const ago = (t) => { const m = Math.max(1, Math.round((Date.now() - new Date(t).getTime()) / 60000)); return m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago` }
   const q = search.toLowerCase()
   const list = techs.filter((t) => (showInactive || t.is_active) &&
     (!q || t.name.toLowerCase().includes(q) || t.tech_code?.toLowerCase().includes(q) || t.city?.toLowerCase().includes(q) || t.mobile?.includes(q)))
@@ -267,6 +271,27 @@ export default function TechniciansPage() {
           <button onClick={() => setForm('new')} className="btn-primary text-xs"><Plus size={13} /> Add Technician</button>
         </div>
       </div>
+
+      {isAdmin && pinResets.length > 0 && (
+        <div className="card p-4 border-amber-300/70 bg-amber-50/80">
+          <p className="text-sm font-heading font-bold text-amber-900 flex items-center gap-2 mb-3"><KeyRound size={16} /> Forgot PIN requests ({pinResets.length})</p>
+          <div className="space-y-2">
+            {pinResets.map((r) => {
+              const t = techs.find((x) => x.id === r.technician_id)
+              return (
+                <div key={r.id} className="flex flex-wrap items-center gap-3 bg-white rounded-xl border border-amber-200/70 px-3 py-2.5">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-slate-900 truncate">{t ? techLabel(t) : 'Technician'} <span className="font-normal text-slate-500">· {r.mobile}</span></p>
+                    <p className="text-[11px] text-slate-500">Asked {ago(r.created_at)}</p>
+                  </div>
+                  {t && <button onClick={() => setLoginFor(t)} className="btn-primary text-xs py-1.5"><KeyRound size={13} /> Reset PIN & send</button>}
+                  <button onClick={() => dismissReset(r.technician_id)} className="btn-secondary text-xs py-1.5">Dismiss</button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="flex gap-3 items-center flex-wrap">
         <div className="relative flex-1 min-w-52">
