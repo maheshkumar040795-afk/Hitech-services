@@ -124,7 +124,7 @@ export default function BillingPage() {
     <div className="space-y-4">
       {showForm && <BillForm company={company} onClose={() => setShowForm(false)} onSaved={() => qc.invalidateQueries({ queryKey: ['bills'] })} />}
       <div className="flex items-center justify-between">
-        <div><h1 className="text-xl font-bold text-slate-900">Billing</h1><p className="text-sm text-slate-500 mt-0.5">{total} bills · company details are set in Settings</p></div>
+        <div><h1 className="text-2xl font-heading font-extrabold text-slate-900">Billing</h1><p className="text-sm text-slate-500 mt-0.5">{total} bills · company details are set in Settings</p></div>
         <button onClick={() => setShowForm(true)} className="btn-primary text-xs"><Plus size={13} /> New Bill</button>
       </div>
       <div className="card p-0 overflow-hidden">

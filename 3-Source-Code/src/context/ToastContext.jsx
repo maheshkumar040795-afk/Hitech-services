@@ -9,9 +9,9 @@ const ICONS = {
   info:    Info,
 }
 const STYLES = {
-  success: 'border-l-emerald-500 bg-emerald-50 text-emerald-800',
-  error:   'border-l-red-500 bg-red-50 text-red-800',
-  info:    'border-l-brand-500 bg-brand-50 text-brand-800',
+  success: 'text-emerald-800 [&>svg]:text-emerald-500 before:bg-emerald-500',
+  error:   'text-red-800 [&>svg]:text-red-500 before:bg-red-500',
+  info:    'text-brand-800 [&>svg]:text-brand-500 before:bg-brand-500',
 }
 
 export function ToastProvider({ children }) {
@@ -35,8 +35,9 @@ export function ToastProvider({ children }) {
           return (
             <div
               key={t.id}
-              className={`flex items-start gap-3 px-4 py-3 rounded-xl shadow-lg border border-l-4 min-w-[280px] max-w-sm
-                         pointer-events-auto animate-slide-up ${STYLES[t.type]}`}
+              className={`relative overflow-hidden flex items-start gap-3 pl-5 pr-4 py-3.5 rounded-2xl bg-white/90 backdrop-blur-xl border border-slate-200/70
+                         shadow-[0_18px_40px_-14px_rgba(11,17,34,.35)] min-w-[280px] max-w-sm pointer-events-auto animate-scale-in
+                         before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-1 ${STYLES[t.type]}`}
             >
               <Icon size={16} className="flex-shrink-0 mt-0.5" />
               <span className="flex-1 text-sm font-medium leading-snug">{t.message}</span>

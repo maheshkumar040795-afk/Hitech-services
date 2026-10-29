@@ -69,7 +69,7 @@ export default function AuditPage() {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <div><h1 className="text-xl font-bold text-slate-900">Audit Log</h1><p className="text-sm text-slate-500 mt-0.5">Every change, who made it and when (recorded automatically by the database)</p></div>
+        <div><h1 className="text-2xl font-heading font-extrabold text-slate-900">Audit Log</h1><p className="text-sm text-slate-500 mt-0.5">Every change, who made it and when (recorded automatically by the database)</p></div>
         <button className="btn-primary text-xs" onClick={exportLog} disabled={exporting}><Download size={13} /> {exporting ? 'Exporting…' : 'Export'}</button>
       </div>
 

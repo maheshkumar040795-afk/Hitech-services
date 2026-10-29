@@ -69,7 +69,7 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-5 max-w-3xl">
-      <div><h1 className="text-xl font-bold text-slate-900">Settings</h1><p className="text-sm text-slate-500 mt-0.5">Your account and company details</p></div>
+      <div><h1 className="text-2xl font-heading font-extrabold text-slate-900">Settings</h1><p className="text-sm text-slate-500 mt-0.5">Your account and company details</p></div>
 
       <div className="card p-5 flex items-center gap-4">
         <div className="w-14 h-14 rounded-2xl bg-brand-600 flex items-center justify-center text-white font-bold text-xl">{user?.name?.[0]?.toUpperCase()}</div>

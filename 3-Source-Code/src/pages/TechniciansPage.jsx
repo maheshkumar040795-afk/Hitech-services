@@ -129,10 +129,10 @@ function TechProfile({ tech, stat, onClose, onEdit, onLogin, refresh }) {
 
   const rate = stat?.total > 0 ? Math.round((stat.completed / stat.total) * 100) : 0
   return (
-    <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40" onClick={onClose}>
-      <div className="fixed right-0 top-0 h-full w-full max-w-lg bg-white shadow-2xl z-50 flex flex-col overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-ink-950/40 backdrop-blur-md z-40 animate-fade-in" onClick={onClose}>
+      <div className="fixed right-0 top-0 h-full w-full max-w-lg bg-white shadow-[0_0_80px_-10px_rgba(11,17,34,.5)] z-50 flex flex-col overflow-y-auto drawer-in" onClick={(e) => e.stopPropagation()}>
         <div className="p-6 border-b border-slate-100 flex items-start gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-brand-100 flex items-center justify-center text-brand-700 font-bold text-xl flex-shrink-0">{tech.name[0]}</div>
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-600 to-sky-500 flex items-center justify-center text-white font-heading font-extrabold text-xl flex-shrink-0 shadow-glow">{tech.name[0]}</div>
           <div className="flex-1 min-w-0">
             <h2 className="text-base font-bold text-slate-900">{tech.name}</h2>
             {tech.tech_code && <p className="text-xs font-mono font-semibold text-brand-700 flex items-center gap-1 mt-0.5"><BadgeCheck size={12} /> ID {tech.tech_code}</p>}
@@ -257,7 +257,7 @@ export default function TechniciansPage() {
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Technicians</h1>
+          <h1 className="text-2xl font-heading font-extrabold text-slate-900">Technicians</h1>
           <p className="text-sm text-slate-500 mt-0.5">{techs.filter((t) => t.is_active).length} active · {techs.filter((t) => loginState(t) === 'on').length} using the app</p>
         </div>
         <div className="flex gap-2 flex-wrap">
@@ -279,7 +279,7 @@ export default function TechniciansPage() {
       {isLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="card p-5 h-36 animate-pulse bg-slate-50" />)}</div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="stagger grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {list.map((t) => {
             const s = stats[t.id] || {}
             const ls = loginState(t)
@@ -288,7 +288,7 @@ export default function TechniciansPage() {
               <div key={t.id} onClick={() => setProfileId(t.id)} className={`card p-5 cursor-pointer hover:shadow-md transition-all ${!t.is_active ? 'opacity-60' : ''}`}>
                 <div className="flex items-start justify-between mb-3 gap-2">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-xl bg-brand-100 flex items-center justify-center text-brand-700 font-bold flex-shrink-0">{t.name[0]}</div>
+                    <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-brand-600 to-sky-500 flex items-center justify-center text-white font-heading font-extrabold flex-shrink-0 shadow-[inset_0_1px_0_rgba(255,255,255,.3),0_8px_16px_-8px_rgba(53,73,232,.7)]">{t.name[0]}</div>
                     <div className="min-w-0">
                       <p className="font-semibold text-sm text-slate-900 truncate">{t.name}{t.tech_code && <span className="ml-1.5 text-[10px] font-mono font-semibold text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded">{t.tech_code}</span>}</p>
                       <p className="text-xs text-slate-400 flex items-center gap-1">{t.mobile ? <><Phone size={10} />{t.mobile}</> : <span className="text-amber-600">No mobile</span>}</p>
@@ -305,8 +305,8 @@ export default function TechniciansPage() {
                   ))}
                 </div>
                 <div className="flex justify-between text-[10px] text-slate-400 mb-1"><span>Completion</span><span className="font-semibold">{rate}%</span></div>
-                <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                  <div className="h-full rounded-full" style={{ width: `${rate}%`, background: rate >= 80 ? '#10b981' : rate >= 50 ? '#f59e0b' : '#ef4444' }} />
+                <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                  <div className="h-full rounded-full transition-[width] duration-700" style={{ width: `${rate}%`, background: rate >= 80 ? 'linear-gradient(90deg,#34d399,#059669)' : rate >= 50 ? 'linear-gradient(90deg,#fbbf24,#f97316)' : 'linear-gradient(90deg,#fb7185,#dc2626)' }} />
                 </div>
               </div>
             )

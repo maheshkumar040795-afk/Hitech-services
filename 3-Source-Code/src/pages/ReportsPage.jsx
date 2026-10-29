@@ -67,7 +67,7 @@ export default function ReportsPage() {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <div><h1 className="text-xl font-bold text-slate-900">Reports</h1><p className="text-sm text-slate-500 mt-0.5">Filter, review and export to Excel</p></div>
+        <div><h1 className="text-2xl font-heading font-extrabold text-slate-900">Reports</h1><p className="text-sm text-slate-500 mt-0.5">Filter, review and export to Excel</p></div>
         <button onClick={exportExcel} disabled={exporting} className="btn-primary text-xs"><Download size={13} /> {exporting ? 'Exporting…' : 'Export Excel'}</button>
       </div>
 

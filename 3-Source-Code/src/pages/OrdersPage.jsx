@@ -211,7 +211,7 @@ export default function OrdersPage() {
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Orders</h1>
+          <h1 className="text-2xl font-heading font-extrabold text-slate-900">Orders</h1>
           <p className="text-sm text-slate-500 mt-0.5">{total} {filtersOn ? 'matching' : 'total'} orders</p>
         </div>
         <div className="flex gap-2 flex-wrap">

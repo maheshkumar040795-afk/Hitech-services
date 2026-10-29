@@ -83,13 +83,13 @@ export default function UsersPage() {
       )}
 
       <div className="flex items-center justify-between">
-        <div><h1 className="text-xl font-bold text-slate-900">Users</h1><p className="text-sm text-slate-500 mt-0.5">Everyone who can log in</p></div>
+        <div><h1 className="text-2xl font-heading font-extrabold text-slate-900">Users</h1><p className="text-sm text-slate-500 mt-0.5">Everyone who can log in</p></div>
         <button onClick={() => setShowCreate(true)} className="btn-primary text-xs"><Plus size={13} /> Add Office User</button>
       </div>
 
       <div className="flex gap-1">
         {[['office', 'Office (web)'], ['tech', 'Technicians (app)']].map(([k, l]) => (
-          <button key={k} onClick={() => setTab(k)} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${tab === k ? 'bg-brand-600 text-white' : 'bg-white border border-slate-200 text-slate-600'}`}>
+          <button key={k} onClick={() => setTab(k)} className={`chip px-3 ${tab === k ? 'chip-on' : 'chip-off'}`}>
             {l} ({users.filter((u) => (k === 'office' ? u.role !== 'TECHNICIAN' : u.role === 'TECHNICIAN')).length})
           </button>
         ))}

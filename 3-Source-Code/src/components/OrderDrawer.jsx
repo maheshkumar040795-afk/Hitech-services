@@ -56,8 +56,8 @@ export default function OrderDrawer({ orderId, onClose }) {
 
   const st = STATUS[o?.status] || STATUS.PENDING
   return (
-    <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40" onClick={onClose}>
-      <div className="fixed right-0 top-0 h-full w-full max-w-md bg-white shadow-2xl z-50 flex flex-col" onClick={(e) => e.stopPropagation()}
+    <div className="fixed inset-0 bg-ink-950/40 backdrop-blur-md animate-fade-in z-40" onClick={onClose}>
+      <div className="fixed right-0 top-0 h-full w-full max-w-md bg-white shadow-[0_0_80px_-10px_rgba(11,17,34,.5)] z-50 flex flex-col drawer-in" onClick={(e) => e.stopPropagation()}
            style={{ animation: 'slideRight .25s ease-out' }}>
         <style>{'@keyframes slideRight{from{transform:translateX(100%)}to{transform:translateX(0)}}'}</style>
         <div className="p-5 border-b border-slate-100 flex items-start justify-between gap-3">

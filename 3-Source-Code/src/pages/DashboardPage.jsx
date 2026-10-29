@@ -24,12 +24,13 @@ function Delta({ value }) {
 
 function Kpi({ icon: Icon, label, value, sub, color, delta, loading }) {
   return (
-    <div className="card p-4 flex items-start gap-3">
-      <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${color}`}><Icon size={18} className="text-white" /></div>
-      <div className="flex-1 min-w-0">
-        <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">{label}</p>
-        {loading ? <div className="h-7 w-16 bg-slate-100 animate-pulse rounded mt-1" /> : <p className="text-xl font-bold text-slate-900 mt-0.5 truncate">{value ?? '—'}</p>}
-        <div className="flex items-center gap-2 mt-0.5">{sub && <p className="text-xs text-slate-400">{sub}</p>}<Delta value={delta} /></div>
+    <div className="card cursor-pointer p-4 flex items-start gap-3 overflow-hidden">
+      <div className={`absolute -right-8 -top-8 w-24 h-24 rounded-full opacity-[.12] blur-xl ${color}`} />
+      <div className={`relative w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-gradient-to-br ${color} shadow-[inset_0_1px_0_rgba(255,255,255,.3),0_8px_18px_-8px_rgba(15,23,42,.45)]`}><Icon size={19} className="text-white drop-shadow" /></div>
+      <div className="relative flex-1 min-w-0">
+        <p className="text-[10.5px] font-bold text-slate-500 uppercase tracking-[.08em] truncate">{label}</p>
+        {loading ? <div className="h-7 w-16 bg-slate-100 animate-pulse rounded mt-1" /> : <p className="text-[22px] font-heading font-extrabold text-slate-900 mt-0.5 truncate tabular-nums">{value ?? '—'}</p>}
+        <div className="flex items-center gap-2 mt-0.5 min-w-0">{sub && <p className="text-xs text-slate-400 truncate">{sub}</p>}<Delta value={delta} /></div>
       </div>
     </div>
   )
@@ -44,7 +45,7 @@ function BarList({ title, items }) {
         {(items || []).map((b) => (
           <div key={b.name}>
             <div className="flex justify-between mb-1"><span className="text-xs font-medium text-slate-700 truncate pr-2">{b.name}</span><span className="text-xs text-slate-400">{b.count}</span></div>
-            <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden"><div className="h-full bg-brand-500 rounded-full" style={{ width: `${Math.round((b.count / max) * 100)}%` }} /></div>
+            <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full bg-gradient-to-r from-brand-600 to-sky-400 transition-[width] duration-700" style={{ width: `${Math.round((b.count / max) * 100)}%` }} /></div>
           </div>
         ))}
         {!items?.length && <p className="text-sm text-slate-400 text-center py-4">No data</p>}
@@ -84,17 +85,17 @@ export default function DashboardPage() {
     <div className="space-y-5">
       <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Dashboard</h1>
+          <h1 className="text-2xl font-heading font-extrabold text-slate-900">Dashboard</h1>
           <p className="text-sm text-slate-500 mt-0.5">Showing orders dated {rangeLabel}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex gap-1">
             {QUICK.map((q) => (
               <button key={q.key} onClick={() => pick(q)}
-                className={`px-2.5 py-1.5 rounded-lg text-xs font-medium ${quick === q.key ? 'bg-brand-600 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}>{q.label}</button>
+                className={`chip ${quick === q.key ? 'chip-on' : 'chip-off'}`}>{q.label}</button>
             ))}
           </div>
-          <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-1.5">
+          <div className="flex items-center gap-2 bg-white/90 border border-slate-200 rounded-xl px-3 py-1.5 shadow-[0_1px_2px_rgba(15,23,42,.05)] focus-within:border-brand-400 focus-within:ring-4 focus-within:ring-brand-500/10 transition">
             <input type="date" className="text-xs outline-none" value={from} onChange={(e) => setFrom(e.target.value)} />
             <span className="text-xs text-slate-400">to</span>
             <input type="date" className="text-xs outline-none" value={to} onChange={(e) => setTo(e.target.value)} />
@@ -103,13 +104,13 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
-        <Kpi icon={Package} label="Total Orders" value={s?.total} sub="All statuses" color="bg-brand-600" delta={s?.deltas?.total} loading={isLoading} />
-        <Kpi icon={CheckCircle2} label="Completed" value={s?.completed} sub={`${s?.completion_rate ?? 0}% rate`} color="bg-emerald-500" delta={s?.deltas?.completed} loading={isLoading} />
-        <Kpi icon={Clock} label="Pending" value={s?.pending} sub="Awaiting visit" color="bg-amber-500" loading={isLoading} />
-        <Kpi icon={UserX} label="Unassigned" value={s?.unassigned} sub="Need a technician" color={s?.unassigned ? 'bg-red-500' : 'bg-slate-400'} loading={isLoading} />
-        <Kpi icon={IndianRupee} label="Collected" value={s ? fmtMoney(s.amount) : null} sub="From completed jobs" color="bg-teal-600" loading={isLoading} />
-        <Kpi icon={Timer} label="Avg Time" value={s?.avg_hours == null ? '—' : s.avg_hours < 1 ? `${Math.max(1, Math.round(s.avg_hours * 60))} min` : `${s.avg_hours} h`} sub="Assign → complete" color="bg-purple-500" loading={isLoading} />
+      <div className="stagger grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+        <Kpi icon={Package} label="Total Orders" value={s?.total} sub="All statuses" color="from-brand-600 to-sky-500" delta={s?.deltas?.total} loading={isLoading} />
+        <Kpi icon={CheckCircle2} label="Completed" value={s?.completed} sub={`${s?.completion_rate ?? 0}% rate`} color="from-emerald-400 to-emerald-600" delta={s?.deltas?.completed} loading={isLoading} />
+        <Kpi icon={Clock} label="Pending" value={s?.pending} sub="Awaiting visit" color="from-amber-400 to-orange-500" loading={isLoading} />
+        <Kpi icon={UserX} label="Unassigned" value={s?.unassigned} sub="Need a technician" color={s?.unassigned ? 'from-rose-500 to-red-600' : 'from-slate-400 to-slate-500'} loading={isLoading} />
+        <Kpi icon={IndianRupee} label="Collected" value={s ? fmtMoney(s.amount) : null} sub="From completed jobs" color="from-teal-400 to-cyan-600" loading={isLoading} />
+        <Kpi icon={Timer} label="Avg Time" value={s?.avg_hours == null ? '—' : s.avg_hours < 1 ? `${Math.max(1, Math.round(s.avg_hours * 60))} min` : `${s.avg_hours} h`} sub="Assign → complete" color="from-fuchsia-500 to-purple-600" loading={isLoading} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -117,7 +118,7 @@ export default function DashboardPage() {
           <h2 className="text-sm font-semibold text-slate-700 mb-3">Status Distribution</h2>
           <ResponsiveContainer width="100%" height={180}>
             <PieChart>
-              <Pie data={pieData} cx="50%" cy="50%" innerRadius={52} outerRadius={75} paddingAngle={3} dataKey="value">
+              <Pie data={pieData} cx="50%" cy="50%" innerRadius={54} outerRadius={78} paddingAngle={3} cornerRadius={6} stroke="none" dataKey="value">
                 {pieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i]} />)}
               </Pie>
               <Tooltip />
@@ -135,20 +136,23 @@ export default function DashboardPage() {
             <div className="flex gap-1">
               {TREND_OPTIONS.map((o) => (
                 <button key={o.days} onClick={() => setTrendDays(o.days)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-medium ${trendDays === o.days ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>{o.label}</button>
+                  className={`chip py-1 ${trendDays === o.days ? 'chip-on' : 'chip-off'}`}>{o.label}</button>
               ))}
             </div>
           </div>
           <ResponsiveContainer width="100%" height={180}>
             <ComposedChart data={trendData}>
-              <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.2} /><stop offset="95%" stopColor="#10b981" stopOpacity={0} /></linearGradient></defs>
+              <defs>
+                <linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.28} /><stop offset="95%" stopColor="#10b981" stopOpacity={0} /></linearGradient>
+                <linearGradient id="gt" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#1d55e0" stopOpacity={0.18} /><stop offset="95%" stopColor="#1d55e0" stopOpacity={0} /></linearGradient>
+              </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
               <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
               <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={{ borderRadius: 10, border: '1px solid #e2e8f0', fontSize: 12 }} />
-              <Area dataKey="total" name="Total" stroke="#2e8bff" fill="none" strokeWidth={1.5} dot={false} />
-              <Area dataKey="completed" name="Completed" stroke="#10b981" fill="url(#g)" strokeWidth={2} dot={false} />
-              <Line dataKey="pending" name="Pending" stroke="#f59e0b" strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
+              <Tooltip contentStyle={{ borderRadius: 12, border: '1px solid #e3e8f2', fontSize: 12, boxShadow: '0 12px 30px -12px rgba(11,17,34,.3)' }} />
+              <Area type="monotone" dataKey="total" name="Total" stroke="#1d55e0" fill="url(#gt)" strokeWidth={2} dot={false} activeDot={{ r: 4, strokeWidth: 0 }} />
+              <Area type="monotone" dataKey="completed" name="Completed" stroke="#10b981" fill="url(#g)" strokeWidth={2.5} dot={false} activeDot={{ r: 4, strokeWidth: 0 }} />
+              <Line type="monotone" dataKey="pending" name="Pending" stroke="#f59e0b" strokeWidth={1.5} dot={false} strokeDasharray="4 3" />
             </ComposedChart>
           </ResponsiveContainer>
         </div>

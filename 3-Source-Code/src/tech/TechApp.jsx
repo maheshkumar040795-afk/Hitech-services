@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { useOrdersRealtime } from '../hooks/useRealtime'
 import { addDays, todayIST, isTodayIST, fmtDate, fmtDateTime, fmtMoney, mapsUrl, telUrl, waUrl } from '../lib/format'
+import Logo from '../components/Logo'
 
 const REASONS = [
   'Customer not available',
@@ -248,11 +249,11 @@ function JobCard({ job, onOpen, isNew }) {
   const tel = telUrl(job.phone_no)
   const overdue = job.status === 'PENDING' && job.order_date < todayIST()
   return (
-    <div className={`bg-white rounded-3xl border shadow-sm overflow-hidden ${isNew ? 'border-brand-400 ring-2 ring-brand-200' : 'border-slate-200'}`}>
+    <div className={`bg-white rounded-3xl border shadow-soft overflow-hidden transition-transform active:scale-[.985] ${isNew ? 'border-brand-400 ring-4 ring-brand-500/15' : 'border-slate-200/70'}`}>
       <button onClick={onOpen} className="w-full text-left px-4 pt-4 pb-3 active:bg-slate-50">
         <div className="flex items-center justify-between gap-2 mb-1.5">
           <div className="flex items-center gap-2">
-            {isNew && <span className="px-2 py-0.5 rounded-full bg-brand-600 text-white text-[10px] font-bold">NEW</span>}
+            {isNew && <span className="px-2 py-0.5 rounded-full text-white text-[10px] font-bold shadow-glow" style={{ background: 'var(--grad-brand)' }}>NEW</span>}
             {job.status === 'PENDING'
               ? <span className={`text-xs font-semibold ${overdue ? 'text-red-600' : 'text-slate-400'}`}><CalendarDays size={12} className="inline -mt-0.5" /> {fmtDate(job.order_date, { day: 'numeric', month: 'short' })}{overdue ? ' · overdue' : ''}</span>
               : <StatusPill status={job.status} />}
@@ -394,12 +395,14 @@ export default function TechApp() {
   const TABS = [['PENDING', 'Pending', pending.length], ['COMPLETED', 'Done', jobs.filter((j) => j.status === 'COMPLETED').length], ['REJECTED', 'Not done', jobs.filter((j) => j.status === 'REJECTED').length]]
 
   return (
-    <div className="min-h-[100dvh] bg-[#eef2f7]">
-      <header className="bg-[#0f1c2e] text-white sticky top-0 z-30" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-        <div className="flex items-center justify-between px-4 pt-3 pb-2">
+    <div className="min-h-[100dvh] bg-[#f1f3fa]">
+      <header className="noise bg-gradient-to-br from-ink-900 via-ink-950 to-[#071433] text-white sticky top-0 z-30 overflow-hidden shadow-[0_6px_16px_-12px_rgba(11,17,34,.5)]" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+        <div className="aurora-blob animate-aurora w-56 h-56 -top-24 -left-16 bg-brand-500/50" />
+        <div className="aurora-blob animate-aurora-2 w-48 h-48 -top-10 -right-20 bg-sky-500/35" />
+        <div className="relative flex items-center justify-between px-4 pt-3 pb-2">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-brand-500 flex items-center justify-center font-black text-sm">HT</div>
-            <div><p className="text-[11px] text-slate-400 leading-none">HT Jobs</p><p className="font-bold leading-tight">{user?.name}{technician?.tech_code && <span className="ml-1.5 text-[11px] font-mono font-semibold text-brand-300">{technician.tech_code}</span>}</p></div>
+            <Logo size={42} />
+            <div><p className="text-[11px] text-slate-400 leading-none">HT Jobs</p><p className="font-bold leading-tight">{user?.name}{technician?.tech_code && <span className="ml-1.5 text-[11px] font-mono font-semibold text-sky-300">{technician.tech_code}</span>}</p></div>
           </div>
           <div className="flex items-center gap-1">
             <span className={`mr-1 ${live ? 'text-emerald-400' : 'text-slate-500'}`} title={live ? 'Live' : 'Reconnecting'}>{live ? <Wifi size={16} /> : <WifiOff size={16} />}</span>
@@ -407,21 +410,21 @@ export default function TechApp() {
             <button onClick={() => setShowAccount(true)} className="w-10 h-10 rounded-full flex items-center justify-center active:bg-white/10"><User size={20} /></button>
           </div>
         </div>
-        <div className="grid grid-cols-3 gap-2 px-4 pb-3">
+        <div className="relative grid grid-cols-3 gap-2 px-4 pb-3.5">
           {[['Pending', pending.length, 'text-amber-300'], ['Done today', doneToday.length, 'text-emerald-300'], ['Collected today', fmtMoney(collectedToday), 'text-white']].map(([l, v, c]) => (
-            <div key={l} className="bg-white/10 rounded-2xl px-3 py-2"><p className={`text-lg font-bold ${c}`}>{v}</p><p className="text-[10px] text-slate-300">{l}</p></div>
+            <div key={l} className="glass-dark rounded-2xl px-3 py-2.5"><p className={`text-xl font-heading font-extrabold tabular-nums ${c}`}>{v}</p><p className="text-[10px] font-medium text-slate-300/90">{l}</p></div>
           ))}
         </div>
-        <div className="flex bg-white text-slate-500">
+        <div className="relative flex bg-white text-slate-500 rounded-t-3xl">
           {TABS.map(([k, l, n]) => (
-            <button key={k} onClick={() => setTab(k)} className={`flex-1 py-3 text-sm font-semibold border-b-[3px] ${tab === k ? 'border-brand-600 text-brand-700' : 'border-transparent'}`}>
+            <button key={k} onClick={() => setTab(k)} className={`flex-1 py-3.5 text-sm font-semibold border-b-[3px] transition-colors ${tab === k ? 'border-brand-600 text-brand-700' : 'border-transparent'}`}>
               {l} <span className={`ml-0.5 text-xs px-1.5 rounded-full ${tab === k ? 'bg-brand-100' : 'bg-slate-100'}`}>{n}</span>
             </button>
           ))}
         </div>
       </header>
 
-      <main className="p-3 space-y-3" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1.5rem)' }}>
+      <main className="stagger p-3 space-y-3" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1.5rem)' }}>
         {jobs.length > 6 && (
           <div className="relative">
             <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
