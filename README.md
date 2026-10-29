@@ -159,3 +159,13 @@ Only **ORDER ID** and **CUSTOMER NAME** are required. Download **Template** on t
 - **Technician app link is now `…/tech/`** (a real folder). iPhone drops the `#…` part of a link when adding to the Home Screen, so the old `…/#/tech` icon opened the office login. Old links redirect automatically. The HT Jobs app never shows the office login.
 - **Forgot PIN:** HT Jobs login → Forgot PIN? → request goes to the office (red badge on *Technicians* + banner). Admin taps **Reset PIN & send** → new PIN on WhatsApp. Technicians can also WhatsApp/call the office (phone from *Settings → Company phone*).
 - **ID Cards** (admin menu): the ID card generator (`1-Website/id-cards.html`, history stored in its own Firebase project). "Fill from technician" copies name, Technician ID and mobile.
+
+## Update — Oct 2026 (3): Edit order, Google location, Reschedule, Cash / Online
+
+**Run once:** Supabase → SQL Editor → paste `2-Supabase-Setup/update-2026-10-orders-reschedule-payment.sql` → **Run**.
+
+- **Edit order** (pencil icon on every order): fill in missed details, Google location URL, technician; for completed orders also amount + Cash/Online.
+- **Google location URL** on each order (also an optional `LOCATION URL` column in the Excel upload). The technician's Map button opens that exact link.
+- **Rescheduled** status: pick a new visit date (single order or bulk). Order date is kept; the job stays in the technician's Pending list under the new date. Logged in the order's comments.
+- **Completed date** (date the technician actually finished, from `closed_at`) shown on each order line, in order details, Reports and Excel exports.
+- **Cash / Online** when the technician marks a job completed (required when amount > 0). Shown on orders, exports, Reports and the Dashboard "Collected" card (cash vs online split).

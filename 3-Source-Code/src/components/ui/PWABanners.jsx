@@ -49,7 +49,7 @@ export default function PWABanners() {
       {/* Install prompt (only on mobile, not already installed, not dismissed) */}
       {iosHelp && <IOSInstallSheet appName={isTechApp ? 'HT Jobs' : 'Hitech Ops'} onClose={() => { setIosHelp(false); dismiss() }} />}
       {!onLoginScreen && (installPrompt || isIOS()) && !isInstalled && !dismissedInstall && !iosHelp && (
-        <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-80 z-[200]
+        <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-80 z-[45]
                         bg-white border border-slate-200 rounded-2xl shadow-2xl p-4 animate-slide-up">
           <div className="flex items-start gap-3">
             <Logo size={40} />

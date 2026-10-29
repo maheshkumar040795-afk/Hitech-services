@@ -24,6 +24,12 @@ export function fmtDateTime(ts, opts = { day: '2-digit', month: 'short', hour: '
   return new Date(ts).toLocaleString('en-IN', { ...opts, timeZone: IST })
 }
 
+/** timestamp → date in IST, e.g. completed date '30 Oct 26' */
+export function fmtDayIST(ts, opts = { day: '2-digit', month: 'short', year: '2-digit' }) {
+  if (!ts) return '—'
+  return new Date(ts).toLocaleDateString('en-IN', { ...opts, timeZone: IST })
+}
+
 export function isTodayIST(ts) {
   if (!ts) return false
   return new Intl.DateTimeFormat('en-CA', { timeZone: IST }).format(new Date(ts)) === todayIST()
@@ -38,9 +44,17 @@ export const STATUS = {
   PENDING:   { label: 'Pending',   badge: 'badge-pending',   bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200' },
   COMPLETED: { label: 'Completed', badge: 'badge-completed', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
   REJECTED:  { label: 'Rejected',  badge: 'badge-rejected',  bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200' },
+  RESCHEDULED: { label: 'Rescheduled', badge: 'badge-rescheduled', bg: 'bg-sky-50', text: 'text-sky-700', border: 'border-sky-200' },
 }
+/** Statuses that still need a visit */
+export const OPEN_STATUSES = ['PENDING', 'RESCHEDULED']
+export const PAYMENT = { CASH: 'Cash', ONLINE: 'Online' }
+
+/** Google Maps link saved on the order wins; otherwise search by address */
+export const isUrl = (u) => /^https?:\/\/\S+$/i.test(String(u || '').trim())
 
 export function mapsUrl(o) {
+  if (isUrl(o?.location_url)) return o.location_url.trim()
   const q = [o.address, o.location, o.pin_code, 'Tamil Nadu'].filter(Boolean).join(', ')
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`
 }

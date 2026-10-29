@@ -2,12 +2,12 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Download, Search } from 'lucide-react'
 import { supabase, rpc, errMsg, fetchAll } from '../lib/supabase'
-import { fmtDate, fmtDateTime, fmtMoney, STATUS, todayIST, addDays, techLabel } from '../lib/format'
+import { fmtDate, fmtDateTime, fmtDayIST, fmtMoney, STATUS, PAYMENT, todayIST, addDays, techLabel } from '../lib/format'
 import { downloadXlsx } from '../lib/excel'
 import { useTechnicians } from '../hooks/useData'
 import { useToast } from '../context/ToastContext'
 
-const SELECT = 'id, order_id, order_date, customer_name, phone_no, service, brand, location, address, pin_code, status, cod_amount, comments, closed_at, modified_at, technician_id, technician:technicians(name, mobile, city), modifier:profiles!orders_modified_by_fkey(name)'
+const SELECT = '*, technician:technicians(name, mobile, city), modifier:profiles!orders_modified_by_fkey(name)'
 
 function filtered(q, a) {
   q = q.eq('is_deleted', false).gte('order_date', a.from).lte('order_date', a.to)
@@ -49,9 +49,10 @@ export default function ReportsPage() {
       const rows = await fetchAll(() => filtered(supabase.from('orders')
         .select(SELECT + ', comment_logs(comment, created_at, user:profiles(name))'), active).order('order_date', { ascending: false }))
       const orders = rows.map((o) => ({
-        Date: fmtDate(o.order_date), 'Order ID': o.order_id, 'Customer Name': o.customer_name, 'Phone No': o.phone_no || '',
-        Service: o.service || '', Brand: o.brand || '', Location: o.location || '', Address: o.address || '', 'Pin Code': o.pin_code || '',
-        Status: o.status, 'Amount Collected': Number(o.cod_amount || 0), 'Technician ID': techs.find((t) => t.id === o.technician_id)?.tech_code || '', Technician: o.technician?.name || 'Unassigned',
+        'Order Date': fmtDate(o.order_date), 'Rescheduled To': o.rescheduled_date ? fmtDate(o.rescheduled_date) : '', 'Order ID': o.order_id, 'Customer Name': o.customer_name, 'Phone No': o.phone_no || '',
+        Service: o.service || '', Brand: o.brand || '', Location: o.location || '', Address: o.address || '', 'Pin Code': o.pin_code || '', 'Google Location': o.location_url || '',
+        Status: STATUS[o.status]?.label || o.status, 'Completed On': o.status === 'COMPLETED' && o.closed_at ? fmtDayIST(o.closed_at) : '',
+        'Amount Collected': Number(o.cod_amount || 0), Payment: PAYMENT[o.payment_mode] || '', 'Technician ID': techs.find((t) => t.id === o.technician_id)?.tech_code || '', Technician: o.technician?.name || 'Unassigned',
         'Tech Mobile': o.technician?.mobile || '', 'Closed At': o.closed_at ? fmtDateTime(o.closed_at) : '',
         Comments: (o.comment_logs || []).sort((a, b) => a.created_at.localeCompare(b.created_at))
           .map((c) => `[${c.user?.name || '?'} ${fmtDateTime(c.created_at)}] ${c.comment}`).join(' | ') || o.comments || '',
@@ -82,8 +83,9 @@ export default function ReportsPage() {
         <button onClick={() => setActive(f)} className="btn-primary text-xs py-2.5"><Search size={12} /> Retrieve</button>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        {[['Total', s?.total], ['Completed', s?.completed], ['Pending', s?.pending], ['Rejected', s?.rejected], ['Collected', s ? fmtMoney(s.amount) : null]].map(([l, v]) => (
+      <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3">
+        {[['Total', s?.total], ['Completed', s?.completed], ['Pending', s?.pending], ['Rejected', s?.rejected], ['Collected', s ? fmtMoney(s.amount) : null],
+          ...(s?.amount_cash !== undefined ? [['Cash', fmtMoney(s.amount_cash)], ['Online', fmtMoney(s.amount_online)]] : [])].map(([l, v]) => (
           <div key={l} className="card p-4"><p className="text-xs text-slate-500">{l}</p><p className="text-xl font-bold text-slate-900">{v ?? '—'}</p></div>
         ))}
       </div>
@@ -110,10 +112,10 @@ export default function ReportsPage() {
         <div className="px-4 py-3 border-b border-slate-100 flex justify-between"><h2 className="text-sm font-semibold text-slate-700">Orders</h2>
           {data && <span className="text-xs text-slate-400">{data.count > 200 ? `Showing 200 of ${data.count} — export for all` : `${data.count} orders`}</span>}</div>
         <div className="overflow-x-auto"><table className="w-full">
-          <thead><tr className="bg-slate-50 border-b border-slate-200">{['Date', 'Order ID', 'Customer', 'Service', 'Location', 'Technician', 'Status', 'Amount', 'Comment'].map((h) => <th key={h} className="px-3 py-2.5 text-left text-[10px] font-bold text-slate-500 uppercase whitespace-nowrap">{h}</th>)}</tr></thead>
+          <thead><tr className="bg-slate-50 border-b border-slate-200">{['Date', 'Order ID', 'Customer', 'Service', 'Location', 'Technician', 'Status', 'Completed', 'Amount', 'Comment'].map((h) => <th key={h} className="px-3 py-2.5 text-left text-[10px] font-bold text-slate-500 uppercase whitespace-nowrap">{h}</th>)}</tr></thead>
           <tbody>
-            {isLoading ? <tr><td colSpan={9} className="px-3 py-8 text-center text-sm text-slate-400">Loading…</td></tr>
-              : !data?.rows?.length ? <tr><td colSpan={9} className="px-3 py-8 text-center text-sm text-slate-400">No orders for these filters</td></tr>
+            {isLoading ? <tr><td colSpan={10} className="px-3 py-8 text-center text-sm text-slate-400">Loading…</td></tr>
+              : !data?.rows?.length ? <tr><td colSpan={10} className="px-3 py-8 text-center text-sm text-slate-400">No orders for these filters</td></tr>
               : data.rows.map((o) => (
                 <tr key={o.id} className="border-b border-slate-50">
                   <td className="px-3 py-2 text-xs text-slate-600 whitespace-nowrap">{fmtDate(o.order_date)}</td>
@@ -122,8 +124,9 @@ export default function ReportsPage() {
                   <td className="px-3 py-2 text-xs text-slate-600 max-w-[150px] truncate">{o.service}</td>
                   <td className="px-3 py-2 text-xs text-slate-600">{o.location}</td>
                   <td className="px-3 py-2 text-xs">{o.technician?.name || '—'}</td>
-                  <td className="px-3 py-2"><span className={STATUS[o.status].badge}>{STATUS[o.status].label}</span></td>
-                  <td className="px-3 py-2 text-xs">{fmtMoney(o.cod_amount)}</td>
+                  <td className="px-3 py-2"><span className={(STATUS[o.status] || STATUS.PENDING).badge}>{(STATUS[o.status] || STATUS.PENDING).label}</span>{o.rescheduled_date && <div className="text-[10px] text-sky-700 mt-0.5">to {fmtDate(o.rescheduled_date)}</div>}</td>
+                  <td className="px-3 py-2 text-xs whitespace-nowrap">{o.status === 'COMPLETED' && o.closed_at ? fmtDayIST(o.closed_at) : '—'}</td>
+                  <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtMoney(o.cod_amount)}{o.payment_mode && <span className="ml-1 text-[10px] text-slate-500">{PAYMENT[o.payment_mode]}</span>}</td>
                   <td className="px-3 py-2 text-xs text-slate-500 max-w-[200px] truncate">{o.comments || '—'}</td>
                 </tr>))}
           </tbody>

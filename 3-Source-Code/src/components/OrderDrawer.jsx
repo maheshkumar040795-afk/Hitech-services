@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, Phone, MapPin, Send, History, MessageSquare } from 'lucide-react'
 import { supabase, errMsg } from '../lib/supabase'
-import { fmtDate, fmtDateTime, fmtMoney, STATUS, mapsUrl, telUrl, techLabel } from '../lib/format'
+import { fmtDate, fmtDateTime, fmtDayIST, fmtMoney, STATUS, PAYMENT, mapsUrl, telUrl, techLabel, isUrl } from '../lib/format'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 
@@ -71,15 +71,17 @@ export default function OrderDrawer({ orderId, onClose }) {
           <div className="flex-1 overflow-y-auto p-5 space-y-5">
             <div className="flex items-center gap-2 flex-wrap">
               <span className={st.badge}>{st.label}</span>
-              {o.closed_at && <span className="text-[11px] text-slate-400">closed {fmtDateTime(o.closed_at)}</span>}
+              {o.status === 'RESCHEDULED' && o.rescheduled_date && <span className="text-[11px] font-semibold text-sky-700">to {fmtDate(o.rescheduled_date)}</span>}
+              {o.closed_at && <span className="text-[11px] text-slate-400">{o.status === 'COMPLETED' ? 'completed' : 'closed'} {fmtDateTime(o.closed_at)}</span>}
             </div>
             <div className="grid grid-cols-2 gap-4">
               {[
-                ['Order Date', fmtDate(o.order_date)], ['Customer', o.customer_name],
+                ['Order Date', fmtDate(o.order_date)], ['Rescheduled To', o.rescheduled_date ? fmtDate(o.rescheduled_date) : '—'],
+                ['Completed On', o.status === 'COMPLETED' && o.closed_at ? fmtDayIST(o.closed_at) : '—'], ['Customer', o.customer_name],
                 ['Phone', o.phone_no || '—'], ['Service', o.service || '—'],
                 ['Brand', o.brand || '—'], ['Pin Code', o.pin_code || '—'],
                 ['Location', o.location || '—'], ['Address', o.address || '—'],
-                ['Technician', techLabel(o.technician) || 'Unassigned'], ['Amount Collected', fmtMoney(o.cod_amount)],
+                ['Technician', techLabel(o.technician) || 'Unassigned'], ['Amount Collected', `${fmtMoney(o.cod_amount)}${o.payment_mode ? ` · ${PAYMENT[o.payment_mode]}` : ''}`],
                 ['Assigned By', o.assigner?.name ? `${o.assigner.name}${o.assigned_at ? ' · ' + fmtDateTime(o.assigned_at) : ''}` : '—'],
                 ['Last Modified', o.modifier?.name ? `${o.modifier.name} · ${fmtDateTime(o.modified_at)}` : '—'],
               ].map(([l, v]) => (
@@ -88,7 +90,7 @@ export default function OrderDrawer({ orderId, onClose }) {
             </div>
             <div className="flex gap-2">
               {telUrl(o.phone_no) && <a href={telUrl(o.phone_no)} className="btn-secondary text-xs"><Phone size={12} /> Call customer</a>}
-              <a href={mapsUrl(o)} target="_blank" rel="noreferrer" className="btn-secondary text-xs"><MapPin size={12} /> Map</a>
+              <a href={mapsUrl(o)} target="_blank" rel="noreferrer" className="btn-secondary text-xs"><MapPin size={12} /> {isUrl(o.location_url) ? 'Google location' : 'Map'}</a>
             </div>
 
             <div>

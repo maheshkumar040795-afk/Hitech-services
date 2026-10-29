@@ -2,13 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Phone, MapPin, MessageCircle, ChevronRight, X, CheckCircle2, XCircle, Clock, RefreshCw, LogOut,
-  User, Lock, Send, Search, RotateCcw, Pencil, KeyRound, Wifi, WifiOff, CalendarDays, ClipboardList,
+  User, Lock, Send, Search, RotateCcw, Pencil, KeyRound, Wifi, WifiOff, CalendarDays, ClipboardList, CalendarClock, Banknote, Smartphone,
 } from 'lucide-react'
 import { supabase, rpc, errMsg } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { useOrdersRealtime } from '../hooks/useRealtime'
-import { addDays, todayIST, isTodayIST, fmtDate, fmtDateTime, fmtMoney, mapsUrl, telUrl, waUrl } from '../lib/format'
+import { addDays, todayIST, isTodayIST, fmtDate, fmtDayIST, fmtDateTime, fmtMoney, mapsUrl, telUrl, waUrl } from '../lib/format'
 import Logo from '../components/Logo'
 import WelcomeModal from '../components/WelcomeModal'
 
@@ -21,9 +21,13 @@ const REASONS = [
   'Parts / material needed',
   'Site not ready',
 ]
-const JOB_FIELDS = 'id, order_id, order_date, customer_name, phone_no, service, brand, location, address, pin_code, status, comments, cod_amount, closed_at, assigned_at'
+const JOB_FIELDS = '*'   // includes location_url, rescheduled_date, payment_mode when the database has them
 
-const isLocked = (j) => j.status !== 'PENDING' && !isTodayIST(j.closed_at)
+/** Pending or Rescheduled = still to visit */
+const isOpen = (j) => j.status === 'PENDING' || j.status === 'RESCHEDULED'
+/** The day the visit is due: reschedule date if any, else order date */
+const visitDate = (j) => j.rescheduled_date || j.order_date
+const isLocked = (j) => !isOpen(j) && !isTodayIST(j.closed_at)
 
 // ── Bottom sheet ──────────────────────────────────────────────────────────────
 function Sheet({ title, onClose, children, tall = false }) {
@@ -47,17 +51,24 @@ function Sheet({ title, onClose, children, tall = false }) {
 function CompleteSheet({ job, onClose, onDone }) {
   const { toast } = useToast()
   const [amount, setAmount] = useState(job.status === 'COMPLETED' ? String(Number(job.cod_amount)) : '')
+  const [mode, setMode] = useState(job.payment_mode || '')   // CASH | ONLINE
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const submit = async (e) => {
     e.preventDefault()
     const v = parseFloat(amount)
     if (amount === '' || isNaN(v) || v < 0) return toast('Enter the amount collected (0 if none)', 'error')
+    if (v > 0 && !mode) return toast('Select Cash or Online', 'error')
     setBusy(true)
     try {
-      await rpc('tech_update_job', { p_order: job.id, p_status: 'COMPLETED', p_amount: v, p_note: note || null })
+      const args = { p_order: job.id, p_status: 'COMPLETED', p_amount: v, p_note: note || null }
+      try { await rpc('tech_update_job', { ...args, p_payment_mode: v > 0 ? mode : null }) }
+      catch (err) {   // server not updated yet → save without the payment mode
+        if (/p_payment_mode|schema cache|Could not find the function/i.test(err?.message || '')) await rpc('tech_update_job', args)
+        else throw err
+      }
       navigator.vibrate?.(60)
-      toast(`Job completed · ${fmtMoney(v)} collected`, 'success')
+      toast(`Job completed · ${fmtMoney(v)}${v > 0 ? ` ${mode === 'ONLINE' ? 'online' : 'cash'}` : ''}`, 'success')
       onDone()
     } catch (err) { toast(errMsg(err), 'error') } finally { setBusy(false) }
   }
@@ -73,8 +84,20 @@ function CompleteSheet({ job, onClose, onDone }) {
               className="flex-1 py-4 px-3 text-3xl font-bold outline-none bg-transparent" value={amount} onChange={(e) => setAmount(e.target.value)} />
           </div>
           <div className="flex gap-2 mt-2">
-            <button type="button" onClick={() => setAmount('0')} className="px-3 py-1.5 rounded-full bg-slate-100 text-xs font-semibold text-slate-600 active:bg-slate-200">No payment (₹0)</button>
+            <button type="button" onClick={() => { setAmount('0'); setMode('') }} className="px-3 py-1.5 rounded-full bg-slate-100 text-xs font-semibold text-slate-600 active:bg-slate-200">No payment (₹0)</button>
           </div>
+        </div>
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 mb-2">Payment received by</label>
+          <div className="grid grid-cols-2 gap-2">
+            {[['CASH', 'Cash', Banknote, 'border-emerald-500 bg-emerald-50 text-emerald-700'], ['ONLINE', 'Online / UPI', Smartphone, 'border-violet-500 bg-violet-50 text-violet-700']].map(([k, l, Icon, on]) => (
+              <button key={k} type="button" onClick={() => setMode(k)} disabled={parseFloat(amount) === 0}
+                className={`py-4 rounded-2xl border-2 flex flex-col items-center gap-1 text-base font-bold transition disabled:opacity-40 ${mode === k ? on : 'border-slate-200 text-slate-600 active:bg-slate-50'}`}>
+                <Icon size={24} /> {l}
+              </button>
+            ))}
+          </div>
+          {parseFloat(amount) > 0 && !mode && <p className="text-xs text-amber-600 mt-1.5">Select Cash or Online</p>}
         </div>
         <div>
           <label className="block text-sm font-semibold text-slate-700 mb-2">Note <span className="font-normal text-slate-400">(optional)</span></label>
@@ -153,7 +176,7 @@ function JobDetail({ job, onClose, refresh }) {
     setNote(''); qc.invalidateQueries({ queryKey: ['tech-notes', job.id] }); refresh()
   }
   const reopen = async () => {
-    if (!confirm('Re-open this job as Pending?')) return
+    if (!confirm(job.rescheduled_date ? `Re-open this job? It goes back to Rescheduled (${fmtDate(job.rescheduled_date)}).` : 'Re-open this job as Pending?')) return
     try { await rpc('tech_update_job', { p_order: job.id, p_status: 'PENDING' }); toast('Job re-opened', 'success'); refresh() }
     catch (e) { toast(errMsg(e), 'error') }
   }
@@ -176,7 +199,7 @@ function JobDetail({ job, onClose, refresh }) {
             <a href={tel || undefined} className={`flex flex-col items-center gap-1 py-3 rounded-2xl ${tel ? 'bg-brand-50 text-brand-700 active:bg-brand-100' : 'bg-slate-50 text-slate-300 pointer-events-none'}`}>
               <Phone size={22} /><span className="text-xs font-semibold">Call</span></a>
             <a href={mapsUrl(job)} target="_blank" rel="noreferrer" className="flex flex-col items-center gap-1 py-3 rounded-2xl bg-emerald-50 text-emerald-700 active:bg-emerald-100">
-              <MapPin size={22} /><span className="text-xs font-semibold">Map</span></a>
+              <MapPin size={22} /><span className="text-xs font-semibold">{job.location_url ? 'Location' : 'Map'}</span></a>
             <a href={wa || undefined} target="_blank" rel="noreferrer" className={`flex flex-col items-center gap-1 py-3 rounded-2xl ${wa ? 'bg-green-50 text-green-700 active:bg-green-100' : 'bg-slate-50 text-slate-300 pointer-events-none'}`}>
               <MessageCircle size={22} /><span className="text-xs font-semibold">WhatsApp</span></a>
           </div>
@@ -188,14 +211,15 @@ function JobDetail({ job, onClose, refresh }) {
               ['Address', [job.address, job.location].filter(Boolean).join(', ') || '—'],
               ['Pin code', job.pin_code || '—'],
               ['Order date', fmtDate(job.order_date, { day: 'numeric', month: 'short', year: 'numeric' })],
-              ...(job.status !== 'PENDING' ? [['Closed', fmtDateTime(job.closed_at)]] : []),
-              ...(job.status === 'COMPLETED' ? [['Amount collected', fmtMoney(job.cod_amount)]] : []),
+              ...(job.rescheduled_date ? [['Rescheduled to', fmtDate(job.rescheduled_date, { day: 'numeric', month: 'short', year: 'numeric' })]] : []),
+              ...(!isOpen(job) ? [[job.status === 'COMPLETED' ? 'Completed on' : 'Closed', fmtDateTime(job.closed_at)]] : []),
+              ...(job.status === 'COMPLETED' ? [['Amount collected', `${fmtMoney(job.cod_amount)}${job.payment_mode ? ` · ${job.payment_mode === 'ONLINE' ? 'Online' : 'Cash'}` : ''}`]] : []),
             ].map(([l, v]) => (
               <div key={l} className="flex gap-3 px-4 py-3"><span className="text-xs text-slate-400 w-24 flex-shrink-0 pt-0.5">{l}</span><span className="text-[15px] text-slate-800 font-medium break-words">{v}</span></div>
             ))}
           </div>
 
-          {job.status === 'PENDING' ? (
+          {isOpen(job) ? (
             <div className="space-y-2">
               <button onClick={() => setAction('complete')} className="w-full py-4 rounded-2xl bg-emerald-600 active:bg-emerald-700 text-white text-lg font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20">
                 <CheckCircle2 size={22} /> Mark Completed</button>
@@ -239,6 +263,7 @@ function JobDetail({ job, onClose, refresh }) {
 function StatusPill({ status }) {
   const m = {
     PENDING: ['Pending', 'bg-amber-100 text-amber-800', Clock],
+    RESCHEDULED: ['Rescheduled', 'bg-sky-100 text-sky-800', CalendarClock],
     COMPLETED: ['Completed', 'bg-emerald-100 text-emerald-800', CheckCircle2],
     REJECTED: ['Not done', 'bg-red-100 text-red-700', XCircle],
   }[status]
@@ -248,15 +273,15 @@ function StatusPill({ status }) {
 
 function JobCard({ job, onOpen, isNew }) {
   const tel = telUrl(job.phone_no)
-  const overdue = job.status === 'PENDING' && job.order_date < todayIST()
+  const overdue = isOpen(job) && visitDate(job) < todayIST()
   return (
     <div className={`bg-white rounded-3xl border shadow-soft overflow-hidden transition-transform active:scale-[.985] ${isNew ? 'border-brand-400 ring-4 ring-brand-500/15' : 'border-slate-200/70'}`}>
       <button onClick={onOpen} className="w-full text-left px-4 pt-4 pb-3 active:bg-slate-50">
         <div className="flex items-center justify-between gap-2 mb-1.5">
           <div className="flex items-center gap-2">
             {isNew && <span className="px-2 py-0.5 rounded-full text-white text-[10px] font-bold shadow-glow" style={{ background: 'var(--grad-brand)' }}>NEW</span>}
-            {job.status === 'PENDING'
-              ? <span className={`text-xs font-semibold ${overdue ? 'text-red-600' : 'text-slate-400'}`}><CalendarDays size={12} className="inline -mt-0.5" /> {fmtDate(job.order_date, { day: 'numeric', month: 'short' })}{overdue ? ' · overdue' : ''}</span>
+            {isOpen(job)
+              ? <span className={`text-xs font-semibold ${overdue ? 'text-red-600' : job.status === 'RESCHEDULED' ? 'text-sky-700' : 'text-slate-400'}`}>{job.status === 'RESCHEDULED' ? <CalendarClock size={12} className="inline -mt-0.5" /> : <CalendarDays size={12} className="inline -mt-0.5" />} {job.status === 'RESCHEDULED' ? 'Rescheduled · ' : ''}{fmtDate(visitDate(job), { day: 'numeric', month: 'short' })}{overdue ? ' · overdue' : ''}</span>
               : <StatusPill status={job.status} />}
           </div>
           <span className="text-[10px] text-slate-400 font-mono truncate">{job.order_id}</span>
@@ -266,12 +291,12 @@ function JobCard({ job, onOpen, isNew }) {
             <p className="text-[17px] font-bold text-slate-900 truncate">{job.customer_name}</p>
             <p className="text-sm text-slate-600 truncate">{[job.service, job.brand].filter(Boolean).join(' · ')}</p>
             <p className="text-sm text-slate-500 truncate mt-0.5"><MapPin size={12} className="inline -mt-0.5" /> {[job.location, job.pin_code].filter(Boolean).join(' · ') || '—'}</p>
-            {job.status === 'COMPLETED' && <p className="text-sm font-bold text-emerald-700 mt-1">{fmtMoney(job.cod_amount)} collected</p>}
+            {job.status === 'COMPLETED' && <p className="text-sm font-bold text-emerald-700 mt-1">{fmtMoney(job.cod_amount)} collected{job.payment_mode ? ` · ${job.payment_mode === 'ONLINE' ? 'Online' : 'Cash'}` : ''} <span className="font-medium text-slate-400">· {fmtDayIST(job.closed_at, { day: 'numeric', month: 'short' })}</span></p>}
           </div>
           <ChevronRight size={20} className="text-slate-300 mt-2 flex-shrink-0" />
         </div>
       </button>
-      {job.status === 'PENDING' && (
+      {isOpen(job) && (
         <div className="grid grid-cols-2 border-t border-slate-100">
           <a href={tel || undefined} className={`py-3 flex items-center justify-center gap-2 text-sm font-semibold border-r border-slate-100 ${tel ? 'text-brand-700 active:bg-brand-50' : 'text-slate-300 pointer-events-none'}`}><Phone size={16} /> Call</a>
           <a href={mapsUrl(job)} target="_blank" rel="noreferrer" className="py-3 flex items-center justify-center gap-2 text-sm font-semibold text-emerald-700 active:bg-emerald-50"><MapPin size={16} /> Map</a>
@@ -337,7 +362,7 @@ export default function TechApp() {
       const since = addDays(todayIST(), -30)
       const { data, error } = await supabase.from('orders').select(JOB_FIELDS)
         .eq('technician_id', technician.id).eq('is_deleted', false)
-        .or(`status.eq.PENDING,order_date.gte.${since}`)
+        .or(`status.not.in.(COMPLETED,REJECTED),order_date.gte.${since}`)
         .order('order_date', { ascending: true })
       if (error) throw error
       return data
@@ -349,7 +374,7 @@ export default function TechApp() {
     if (!isSuccess) return // wait for the first real load, so existing jobs are not shown as "new"
     const ids = new Set(jobs.map((j) => j.id))
     if (knownIds.current) {
-      const fresh = jobs.filter((j) => !knownIds.current.has(j.id) && j.status === 'PENDING')
+      const fresh = jobs.filter((j) => !knownIds.current.has(j.id) && isOpen(j))
       if (fresh.length) {
         setNewIds((prev) => new Set([...prev, ...fresh.map((j) => j.id)]))
         navigator.vibrate?.([200, 100, 200])
@@ -369,15 +394,15 @@ export default function TechApp() {
     return () => document.removeEventListener('visibilitychange', onVis)
   }, [refresh])
 
-  const pending = jobs.filter((j) => j.status === 'PENDING')
+  const pending = jobs.filter(isOpen)
   const doneToday = jobs.filter((j) => j.status === 'COMPLETED' && isTodayIST(j.closed_at))
   const collectedToday = doneToday.reduce((s, j) => s + Number(j.cod_amount || 0), 0)
 
   const list = useMemo(() => {
     const q = search.trim().toLowerCase()
-    let l = jobs.filter((j) => j.status === tab)
+    let l = jobs.filter((j) => (tab === 'PENDING' ? isOpen(j) : j.status === tab))
     if (tab !== 'PENDING') l = [...l].sort((a, b) => String(b.closed_at).localeCompare(String(a.closed_at)))
-    else l = [...l].sort((a, b) => (newIds.has(b.id) - newIds.has(a.id)) || a.order_date.localeCompare(b.order_date))
+    else l = [...l].sort((a, b) => (newIds.has(b.id) - newIds.has(a.id)) || visitDate(a).localeCompare(visitDate(b)))
     if (q) l = l.filter((j) => [j.customer_name, j.order_id, j.location, j.pin_code, j.phone_no].some((v) => v?.toLowerCase().includes(q)))
     return l
   }, [jobs, tab, search, newIds])

@@ -107,9 +107,9 @@ export default function DashboardPage() {
       <div className="stagger grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
         <Kpi icon={Package} label="Total Orders" value={s?.total} sub="All statuses" color="from-brand-600 to-sky-500" delta={s?.deltas?.total} loading={isLoading} />
         <Kpi icon={CheckCircle2} label="Completed" value={s?.completed} sub={`${s?.completion_rate ?? 0}% rate`} color="from-emerald-400 to-emerald-600" delta={s?.deltas?.completed} loading={isLoading} />
-        <Kpi icon={Clock} label="Pending" value={s?.pending} sub="Awaiting visit" color="from-amber-400 to-orange-500" loading={isLoading} />
+        <Kpi icon={Clock} label="Pending" value={s?.pending} sub={s?.rescheduled ? `incl. ${s.rescheduled} rescheduled` : "Awaiting visit"} color="from-amber-400 to-orange-500" loading={isLoading} />
         <Kpi icon={UserX} label="Unassigned" value={s?.unassigned} sub="Need a technician" color={s?.unassigned ? 'from-rose-500 to-red-600' : 'from-slate-400 to-slate-500'} loading={isLoading} />
-        <Kpi icon={IndianRupee} label="Collected" value={s ? fmtMoney(s.amount) : null} sub="From completed jobs" color="from-teal-400 to-cyan-600" loading={isLoading} />
+        <Kpi icon={IndianRupee} label="Collected" value={s ? fmtMoney(s.amount) : null} sub={s?.amount_cash !== undefined ? `Cash ${fmtMoney(s.amount_cash)} · Online ${fmtMoney(s.amount_online)}` : "From completed jobs"} color="from-teal-400 to-cyan-600" loading={isLoading} />
         <Kpi icon={Timer} label="Avg Time" value={s?.avg_hours == null ? '—' : s.avg_hours < 1 ? `${Math.max(1, Math.round(s.avg_hours * 60))} min` : `${s.avg_hours} h`} sub="Assign → complete" color="from-fuchsia-500 to-purple-600" loading={isLoading} />
       </div>
 

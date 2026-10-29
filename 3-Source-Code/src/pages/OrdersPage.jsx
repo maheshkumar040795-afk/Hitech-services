@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
-import { Search, Upload, Download, Eye, MessageSquare, X, ChevronLeft, ChevronRight, Plus, FileDown, Trash2, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { Search, Upload, Download, Eye, MessageSquare, X, ChevronLeft, ChevronRight, Plus, FileDown, Trash2, AlertTriangle, CheckCircle2, Pencil, MapPin, CalendarClock, Save } from 'lucide-react'
 import { supabase, rpc, errMsg, fetchAll, safeSearch } from '../lib/supabase'
-import { fmtDate, fmtDateTime, STATUS, todayIST, techLabel } from '../lib/format'
+import { fmtDate, fmtDateTime, fmtDayIST, STATUS, PAYMENT, todayIST, techLabel, isUrl } from '../lib/format'
 import { parseOrdersFile, downloadOrdersTemplate, downloadXlsx } from '../lib/excel'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
@@ -12,7 +12,8 @@ import OrderDrawer from '../components/OrderDrawer'
 import Modal, { Field } from '../components/Modal'
 
 const LIMIT = 25
-const SELECT = 'id, order_id, order_date, customer_name, phone_no, service, brand, location, address, pin_code, status, comments, cod_amount, technician_id, modified_at, closed_at, technician:technicians(id,name), modifier:profiles!orders_modified_by_fkey(name)'
+// '*' so new columns (location_url, rescheduled_date, payment_mode) come through without breaking older databases
+const SELECT = '*, technician:technicians(id,name), modifier:profiles!orders_modified_by_fkey(name)'
 
 function applyFilters(q, f) {
   q = q.eq('is_deleted', false)
@@ -91,23 +92,41 @@ function UploadModal({ file, parsed, onClose, onDone }) {
   )
 }
 
-function NewOrderModal({ techs, onClose, onSaved }) {
+const ORDER_FIELDS = ['order_id', 'order_date', 'customer_name', 'phone_no', 'service', 'brand', 'location', 'address', 'pin_code', 'location_url', 'technician_id']
+
+/** Add a new order, or edit an existing one to fill in missed details */
+function OrderFormModal({ order, techs, onClose, onSaved }) {
   const { toast } = useToast()
-  const [f, setF] = useState({ order_id: '', order_date: todayIST(), customer_name: '', phone_no: '', service: '', brand: '', location: '', address: '', pin_code: '', technician_id: '' })
+  const editing = !!order
+  const [f, setF] = useState(() => {
+    const base = { order_id: '', order_date: todayIST(), customer_name: '', phone_no: '', service: '', brand: '', location: '', address: '', pin_code: '', location_url: '', technician_id: '' }
+    if (!order) return base
+    const o = Object.fromEntries(ORDER_FIELDS.map((k) => [k, order[k] ?? '']))
+    return { ...base, ...o, cod_amount: order.cod_amount ?? 0, payment_mode: order.payment_mode || '' }
+  })
   const [busy, setBusy] = useState(false)
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }))
+  const completed = order?.status === 'COMPLETED'
   const save = async (e) => {
     e.preventDefault()
+    const row = Object.fromEntries(ORDER_FIELDS.map((k) => [k, typeof f[k] === 'string' ? f[k].trim() || null : f[k]]))
+    if (row.location_url && !isUrl(row.location_url)) return toast('Google location must be a link starting with https://', 'error')
+    if (editing && !row.location_url && !order.location_url) delete row.location_url   // older database without the column
+    if (completed) {
+      row.cod_amount = Math.max(0, parseFloat(f.cod_amount) || 0)
+      row.payment_mode = row.cod_amount > 0 ? (f.payment_mode || null) : null
+    }
     setBusy(true)
-    const row = Object.fromEntries(Object.entries(f).map(([k, v]) => [k, typeof v === 'string' ? v.trim() || null : v]))
-    const { error } = await supabase.from('orders').insert(row)
+    const { error } = editing
+      ? await supabase.from('orders').update(row).eq('id', order.id)
+      : await supabase.from('orders').insert(row)
     setBusy(false)
     if (error) return toast(error.code === '23505' ? 'This Order ID already exists' : errMsg(error), 'error')
-    toast('Order added', 'success'); onSaved(); onClose()
+    toast(editing ? 'Order updated' : 'Order added', 'success'); onSaved(); onClose()
   }
   return (
-    <Modal title="New order" subtitle="For jobs that are not in the Excel file" onClose={onClose} width="max-w-xl">
-      <form onSubmit={save} className="grid grid-cols-2 gap-3">
+    <Modal title={editing ? 'Edit order' : 'New order'} subtitle={editing ? `${order.order_id} · fill in or correct details` : 'For jobs that are not in the Excel file'} onClose={onClose} width="max-w-xl">
+      <form onSubmit={save} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Order ID *"><input className="input" value={f.order_id} onChange={set('order_id')} required /></Field>
         <Field label="Order Date *"><input type="date" className="input" value={f.order_date} onChange={set('order_date')} required /></Field>
         <Field label="Customer Name *"><input className="input" value={f.customer_name} onChange={set('customer_name')} required /></Field>
@@ -116,15 +135,52 @@ function NewOrderModal({ techs, onClose, onSaved }) {
         <Field label="Brand"><input className="input" value={f.brand} onChange={set('brand')} /></Field>
         <Field label="Location / Area"><input className="input" value={f.location} onChange={set('location')} /></Field>
         <Field label="Pin Code"><input className="input" inputMode="numeric" value={f.pin_code} onChange={set('pin_code')} /></Field>
-        <div className="col-span-2"><Field label="Full Address"><input className="input" value={f.address} onChange={set('address')} /></Field></div>
-        <div className="col-span-2"><Field label="Assign Technician">
+        <div className="sm:col-span-2"><Field label="Full Address"><input className="input" value={f.address} onChange={set('address')} /></Field></div>
+        <div className="sm:col-span-2"><Field label="Google location URL" hint="Paste the link from Google Maps → Share. The technician's Map button opens this exact spot.">
+          <div className="relative"><MapPin size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input className="input pl-9" inputMode="url" placeholder="https://maps.app.goo.gl/…" value={f.location_url} onChange={set('location_url')} /></div>
+        </Field></div>
+        <div className="sm:col-span-2"><Field label="Assign Technician">
           <select className="input" value={f.technician_id} onChange={set('technician_id')}>
             <option value="">— Unassigned —</option>
-            {techs.filter((t) => t.is_active).map((t) => <option key={t.id} value={t.id}>{techLabel(t)}{t.city ? ` · ${t.city}` : ''}</option>)}
+            {techs.filter((t) => t.is_active || t.id === f.technician_id).map((t) => <option key={t.id} value={t.id}>{techLabel(t)}{t.city ? ` · ${t.city}` : ''}</option>)}
           </select></Field></div>
-        <div className="col-span-2 flex justify-end gap-2 pt-2">
+        {completed && <>
+          <Field label="Amount collected ₹"><input type="number" min="0" step="0.01" className="input" value={f.cod_amount} onChange={set('cod_amount')} /></Field>
+          <Field label="Payment">
+            <select className="input" value={f.payment_mode} onChange={set('payment_mode')}>
+              <option value="">—</option><option value="CASH">Cash</option><option value="ONLINE">Online</option>
+            </select></Field>
+        </>}
+        <div className="sm:col-span-2 flex justify-end gap-2 pt-2">
           <button type="button" onClick={onClose} className="btn-secondary text-xs">Cancel</button>
-          <button disabled={busy} className="btn-primary text-xs"><Plus size={13} /> {busy ? 'Saving…' : 'Add Order'}</button>
+          <button disabled={busy} className="btn-primary text-xs">{editing ? <Save size={13} /> : <Plus size={13} />} {busy ? 'Saving…' : editing ? 'Save changes' : 'Add Order'}</button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+/** Status → Rescheduled: pick the new visit date */
+function RescheduleModal({ orders, onClose, onSave }) {
+  const current = orders.length === 1 ? orders[0].rescheduled_date : null
+  const [date, setDate] = useState(current || todayIST())
+  const [busy, setBusy] = useState(false)
+  const save = async (e) => {
+    e.preventDefault()
+    if (!date) return
+    setBusy(true); await onSave(date); setBusy(false)
+  }
+  return (
+    <Modal title="Reschedule" subtitle={orders.length === 1 ? `${orders[0].order_id} · ${orders[0].customer_name}` : `${orders.length} orders`} onClose={onClose}>
+      <form onSubmit={save} className="space-y-4">
+        {orders.length === 1 && <p className="text-xs text-slate-500">Order date: <b>{fmtDate(orders[0].order_date)}</b>{current ? <> · currently rescheduled to <b>{fmtDate(current)}</b></> : null}</p>}
+        <Field label="New visit date *" hint="The job stays in the technician's Pending list with this date.">
+          <input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} required autoFocus />
+        </Field>
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="btn-secondary text-xs">Cancel</button>
+          <button disabled={busy || !date} className="btn-primary text-xs"><CalendarClock size={13} /> {busy ? 'Saving…' : 'Reschedule'}</button>
         </div>
       </form>
     </Modal>
@@ -146,6 +202,8 @@ export default function OrdersPage() {
   const [detailId, setDetailId] = useState(null)
   const [upload, setUpload] = useState(null)
   const [showNew, setShowNew] = useState(false)
+  const [editOrder, setEditOrder] = useState(null)
+  const [resched, setResched] = useState(null) // orders being rescheduled
   const [bulkTech, setBulkTech] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -188,9 +246,11 @@ export default function OrdersPage() {
     try {
       const rows = await fetchAll(() => applyFilters(supabase.from('orders').select(SELECT), f).order('order_date', { ascending: false }))
       downloadXlsx(`hitech-orders-${todayIST()}.xlsx`, [{ name: 'Orders', rows: rows.map((o) => ({
-        Date: fmtDate(o.order_date), 'Order ID': o.order_id, 'Customer Name': o.customer_name, 'Phone No': o.phone_no || '',
-        Service: o.service || '', Brand: o.brand || '', Location: o.location || '', Address: o.address || '', 'Pin Code': o.pin_code || '',
-        'Technician ID': techs.find((t) => t.id === o.technician_id)?.tech_code || '', Technician: o.technician?.name || 'Unassigned', Status: o.status, Amount: Number(o.cod_amount || 0), Comments: o.comments || '',
+        'Order Date': fmtDate(o.order_date), 'Rescheduled To': o.rescheduled_date ? fmtDate(o.rescheduled_date) : '', 'Order ID': o.order_id, 'Customer Name': o.customer_name, 'Phone No': o.phone_no || '',
+        Service: o.service || '', Brand: o.brand || '', Location: o.location || '', Address: o.address || '', 'Pin Code': o.pin_code || '', 'Google Location': o.location_url || '',
+        'Technician ID': techs.find((t) => t.id === o.technician_id)?.tech_code || '', Technician: o.technician?.name || 'Unassigned', Status: STATUS[o.status]?.label || o.status,
+        'Completed On': o.status === 'COMPLETED' && o.closed_at ? fmtDayIST(o.closed_at) : '', 'Not Done On': o.status === 'REJECTED' && o.closed_at ? fmtDayIST(o.closed_at) : '',
+        Amount: Number(o.cod_amount || 0), Payment: PAYMENT[o.payment_mode] || '', Comments: o.comments || '',
         'Modified By': o.modifier?.name || '', 'Modified At': o.modified_at ? fmtDateTime(o.modified_at) : '',
       })) }])
     } catch (e) { toast(errMsg(e), 'error') } finally { setBusy(false) }
@@ -206,7 +266,10 @@ export default function OrdersPage() {
     <div className="space-y-4">
       {detailId && <OrderDrawer orderId={detailId} onClose={() => setDetailId(null)} />}
       {upload && <UploadModal {...upload} onClose={() => setUpload(null)} onDone={refresh} />}
-      {showNew && <NewOrderModal techs={techs} onClose={() => setShowNew(false)} onSaved={refresh} />}
+      {showNew && <OrderFormModal techs={techs} onClose={() => setShowNew(false)} onSaved={refresh} />}
+      {editOrder && <OrderFormModal order={editOrder} techs={techs} onClose={() => setEditOrder(null)} onSaved={refresh} />}
+      {resched && <RescheduleModal orders={resched} onClose={() => setResched(null)}
+        onSave={async (date) => { await update(resched.map((o) => o.id), { status: 'RESCHEDULED', rescheduled_date: date }, `${resched.length === 1 ? resched[0].order_id : resched.length + ' orders'} rescheduled to ${fmtDate(date)}`); setResched(null); setSelected(new Set()) }} />}
       <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={onFile} />
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -228,7 +291,7 @@ export default function OrdersPage() {
           <input className="input pl-9 py-2" placeholder="Search order ID, customer, phone, location, pincode…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
         </div>
         <select className="input w-auto py-2" value={f.status} onChange={setFilter('status')}>
-          <option value="">All statuses</option><option value="PENDING">Pending</option><option value="COMPLETED">Completed</option><option value="REJECTED">Rejected</option>
+          <option value="">All statuses</option><option value="PENDING">Pending</option><option value="RESCHEDULED">Rescheduled</option><option value="COMPLETED">Completed</option><option value="REJECTED">Rejected</option>
         </select>
         <select className="input w-auto py-2" value={f.tech} onChange={setFilter('tech')}>
           <option value="">All technicians</option><option value="none">⚠ Unassigned</option>
@@ -256,6 +319,8 @@ export default function OrdersPage() {
             <button key={s} disabled={busy} onClick={() => update([...selected], { status: s }, `${selected.size} orders → ${STATUS[s].label}`).then(() => setSelected(new Set()))}
               className={`text-xs font-semibold px-3 py-1.5 rounded-lg border ${STATUS[s].bg} ${STATUS[s].text} ${STATUS[s].border}`}>→ {STATUS[s].label}</button>
           ))}
+          <button disabled={busy} onClick={() => setResched(orders.filter((o) => selected.has(o.id)))}
+            className={`text-xs font-semibold px-3 py-1.5 rounded-lg border ${STATUS.RESCHEDULED.bg} ${STATUS.RESCHEDULED.text} ${STATUS.RESCHEDULED.border}`}>→ Reschedule…</button>
           {isAdmin && <button disabled={busy} className="btn-danger text-xs py-1.5" onClick={() => {
             if (confirm(`Delete ${selected.size} orders? They will be hidden everywhere (can be restored from the database).`))
               update([...selected], { is_deleted: true }, 'Orders deleted').then(() => setSelected(new Set()))
@@ -270,27 +335,28 @@ export default function OrdersPage() {
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
                 <th className="px-3 py-3 w-10"><input type="checkbox" checked={allSel} onChange={toggleAll} /></th>
-                {['Date', 'Order ID', 'Customer', 'Phone', 'Service', 'Location', 'Pin', 'Technician', 'Status', 'Amount ₹', 'Comment', 'Modified', ''].map((h) => (
+                {['Date', 'Order ID', 'Customer', 'Phone', 'Service', 'Location', 'Pin', 'Technician', 'Status', 'Completed', 'Amount ₹', 'Comment', 'Modified', ''].map((h) => (
                   <th key={h} className="px-3 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {isLoading ? Array.from({ length: 6 }).map((_, i) => (
-                <tr key={i} className="border-b border-slate-50"><td colSpan={14} className="px-3 py-3"><div className="h-4 bg-slate-100 animate-pulse rounded" /></td></tr>
+                <tr key={i} className="border-b border-slate-50"><td colSpan={15} className="px-3 py-3"><div className="h-4 bg-slate-100 animate-pulse rounded" /></td></tr>
               )) : orders.length === 0 ? (
-                <tr><td colSpan={14} className="px-3 py-12 text-center text-sm text-slate-400">No orders found</td></tr>
+                <tr><td colSpan={15} className="px-3 py-12 text-center text-sm text-slate-400">No orders found</td></tr>
               ) : orders.map((o) => {
-                const sc = STATUS[o.status]
+                const sc = STATUS[o.status] || STATUS.PENDING
                 return (
                   <tr key={o.id} className={`border-b border-slate-50 hover:bg-slate-50/80 ${selected.has(o.id) ? 'bg-brand-50/50' : ''}`}>
                     <td className="px-3 py-2"><input type="checkbox" checked={selected.has(o.id)} onChange={() => toggle(o.id)} /></td>
-                    <td className="px-3 py-2 whitespace-nowrap text-[11px] text-slate-600">{fmtDate(o.order_date)}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-[11px] text-slate-600">{fmtDate(o.order_date)}
+                      {o.rescheduled_date && <div className="text-[10px] font-semibold text-sky-700 flex items-center gap-0.5" title="Rescheduled to"><CalendarClock size={10} /> {fmtDate(o.rescheduled_date)}</div>}</td>
                     <td className="px-3 py-2 whitespace-nowrap"><button onClick={() => setDetailId(o.id)} className="font-mono text-xs text-brand-600 font-semibold hover:underline">{o.order_id}</button></td>
                     <td className="px-3 py-2 text-xs font-semibold text-slate-800 whitespace-nowrap">{o.customer_name}</td>
                     <td className="px-3 py-2 font-mono text-[11px] text-slate-500">{o.phone_no}</td>
                     <td className="px-3 py-2 max-w-[150px]"><span className="text-xs text-slate-600 line-clamp-2">{o.service}{o.brand ? ` · ${o.brand}` : ''}</span></td>
-                    <td className="px-3 py-2 text-xs text-slate-600">{o.location}</td>
+                    <td className="px-3 py-2 text-xs text-slate-600">{o.location}{isUrl(o.location_url) && <a href={o.location_url} target="_blank" rel="noreferrer" title="Open Google location" className="ml-1 inline-flex align-middle text-emerald-600 hover:text-emerald-700"><MapPin size={12} /></a>}</td>
                     <td className="px-3 py-2 font-mono text-xs text-slate-400">{o.pin_code}</td>
                     <td className="px-3 py-2">
                       <select value={o.technician_id || ''} disabled={busy}
@@ -304,15 +370,28 @@ export default function OrdersPage() {
                       </select>
                     </td>
                     <td className="px-3 py-2">
-                      <select value={o.status} disabled={busy} onChange={(e) => update([o.id], { status: e.target.value }, `${o.order_id} → ${STATUS[e.target.value].label}`)}
+                      <select value={o.status} disabled={busy} onChange={(e) => e.target.value === 'RESCHEDULED' ? setResched([o]) : update([o.id], { status: e.target.value }, `${o.order_id} → ${STATUS[e.target.value].label}`)}
                         className={`text-[10px] font-semibold px-2 py-1 rounded-lg border ${sc.bg} ${sc.text} ${sc.border}`}>
-                        <option value="PENDING">Pending</option><option value="COMPLETED">Completed</option><option value="REJECTED">Rejected</option>
+                        <option value="PENDING">Pending</option><option value="RESCHEDULED">Rescheduled</option><option value="COMPLETED">Completed</option><option value="REJECTED">Rejected</option>
                       </select>
+                      {o.status === 'RESCHEDULED' && <button onClick={() => setResched([o])} className="block mt-0.5 text-[10px] font-semibold text-sky-700 hover:underline whitespace-nowrap">to {fmtDate(o.rescheduled_date)} · change</button>}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap text-[11px]">
+                      {o.status === 'COMPLETED' && o.closed_at ? <span className="text-emerald-700 font-semibold" title={fmtDateTime(o.closed_at)}>{fmtDayIST(o.closed_at)}</span>
+                        : o.status === 'REJECTED' && o.closed_at ? <span className="text-red-600" title={`Not done · ${fmtDateTime(o.closed_at)}`}>{fmtDayIST(o.closed_at)}</span>
+                        : <span className="text-slate-300">—</span>}
                     </td>
                     <td className="px-3 py-2">
                       <input key={`${o.id}-${o.cod_amount}`} type="number" min="0" step="0.01" defaultValue={Number(o.cod_amount || 0)}
                         className="w-20 text-xs px-2 py-1 border border-slate-200 rounded-lg text-right"
                         onBlur={(e) => { const v = Math.max(0, parseFloat(e.target.value) || 0); if (v !== Number(o.cod_amount || 0)) update([o.id], { cod_amount: v }, 'Amount saved') }} />
+                      {o.status === 'COMPLETED' && Number(o.cod_amount) > 0 && (
+                        <select value={o.payment_mode || ''} disabled={busy} title="Cash or Online"
+                          onChange={(e) => update([o.id], { payment_mode: e.target.value || null }, `Payment: ${PAYMENT[e.target.value] || 'not set'}`)}
+                          className={`block mt-1 w-20 text-[10px] font-semibold px-1.5 py-0.5 rounded-md border ${o.payment_mode === 'ONLINE' ? 'bg-violet-50 text-violet-700 border-violet-200' : o.payment_mode === 'CASH' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                          <option value="">Mode?</option><option value="CASH">Cash</option><option value="ONLINE">Online</option>
+                        </select>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       <button onClick={() => setDetailId(o.id)} title={o.comments || 'Add comment'}
@@ -325,7 +404,10 @@ export default function OrdersPage() {
                       {o.modifier?.name ? <div className="flex flex-col"><span className="text-[10px] font-semibold text-violet-700">{o.modifier.name}</span>
                         <span className="text-[9px] text-slate-400">{fmtDateTime(o.modified_at)}</span></div> : <span className="text-slate-300 text-xs">—</span>}
                     </td>
-                    <td className="px-3 py-2"><button onClick={() => setDetailId(o.id)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-brand-600"><Eye size={14} /></button></td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      <button onClick={() => setEditOrder(o)} title="Edit order" className="p-1.5 rounded-lg hover:bg-brand-50 text-slate-400 hover:text-brand-600"><Pencil size={14} /></button>
+                      <button onClick={() => setDetailId(o.id)} title="View details" className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-brand-600"><Eye size={14} /></button>
+                    </td>
                   </tr>
                 )
               })}

@@ -10,6 +10,7 @@ const FIELD_ALIASES = {
   brand:         ['BRAND'],
   location:      ['LOCATION', 'CITY', 'AREA'],
   address:       ['ADDRESS', 'FULLADDRESS'],
+  location_url:  ['LOCATIONURL', 'GOOGLELOCATION', 'GOOGLELOCATIONURL', 'GOOGLEMAP', 'GOOGLEMAPS', 'GOOGLEMAPLINK', 'MAPLINK', 'MAPURL', 'MAP', 'LOCATIONLINK'],
   pin_code:      ['PINCODE', 'PIN', 'POSTALCODE', 'ZIPCODE'],
   technician:    ['TECHNICIAN', 'TECHNICIANNAME', 'TECH'],
   status:        ['STATUS'],
@@ -90,11 +91,11 @@ export function downloadXlsx(filename, sheets) {
 export function downloadOrdersTemplate() {
   const wb = XLSX.utils.book_new()
   const ws = XLSX.utils.aoa_to_sheet([
-    ['DATE', 'ORDER ID', 'CUSTOMER NAME', 'PHONE NO', 'SERVICE', 'BRAND', 'LOCATION', 'ADDRESS', 'PIN CODE', 'TECHNICIAN', 'STATUS', 'COMMENTS'],
-    ['10/6/2026', '406-0764915-3871521', 'Karthiga', '7708240150', 'AC Installation Service', 'Voltas', 'Kanchipuram', '12, Gandhi Road', '631502', 'Abinesh', 'Pending', 'Tomorrow Appointment'],
-    ['10/6/2026', '406-6864501-1397130', 'Senthil', '9840067251', 'AC Installation Service', 'Godrej', 'Besant Nagar', '', '600090', '', 'Pending', ''],
+    ['DATE', 'ORDER ID', 'CUSTOMER NAME', 'PHONE NO', 'SERVICE', 'BRAND', 'LOCATION', 'ADDRESS', 'PIN CODE', 'LOCATION URL', 'TECHNICIAN', 'STATUS', 'COMMENTS'],
+    ['10/6/2026', '406-0764915-3871521', 'Karthiga', '7708240150', 'AC Installation Service', 'Voltas', 'Kanchipuram', '12, Gandhi Road', '631502', 'https://maps.app.goo.gl/xxxxx', 'Abinesh', 'Pending', 'Tomorrow Appointment'],
+    ['10/6/2026', '406-6864501-1397130', 'Senthil', '9840067251', 'AC Installation Service', 'Godrej', 'Besant Nagar', '', '600090', '', '', 'Pending', ''],
   ])
-  ws['!cols'] = [12, 24, 18, 14, 28, 12, 16, 28, 10, 14, 10, 22].map((wch) => ({ wch }))
+  ws['!cols'] = [12, 24, 18, 14, 28, 12, 16, 28, 10, 30, 14, 10, 22].map((wch) => ({ wch }))
   XLSX.utils.book_append_sheet(wb, ws, 'Orders')
   XLSX.writeFile(wb, 'hitech-orders-template.xlsx')
 }
