@@ -37,7 +37,7 @@ export default function OrderDrawer({ orderId, onClose }) {
     queryKey: ['order', orderId, 'history'],
     queryFn: async () => {
       const { data, error } = await supabase.from('audit_logs')
-        .select('id, action, note, created_at, actor:profiles(name)').eq('order_id', orderId).order('created_at', { ascending: false }).limit(30)
+        .select('id, action, note, created_at, actor:profiles(name)').eq('order_id', orderId).order('created_at', { ascending: false }).limit(3)
       if (error) throw error
       return data
     },
@@ -115,7 +115,7 @@ export default function OrderDrawer({ orderId, onClose }) {
             </div>
 
             <div>
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2 flex items-center gap-1.5"><History size={12} /> History</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2 flex items-center gap-1.5"><History size={12} /> Recent changes</p>
               <ol className="border-l-2 border-slate-100 ml-1 space-y-3">
                 {(history || []).map((h) => (
                   <li key={h.id} className="pl-3 relative">

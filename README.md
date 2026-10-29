@@ -169,3 +169,10 @@ Only **ORDER ID** and **CUSTOMER NAME** are required. Download **Template** on t
 - **Rescheduled** status: pick a new visit date (single order or bulk). Order date is kept; the job stays in the technician's Pending list under the new date. Logged in the order's comments.
 - **Completed date** (date the technician actually finished, from `closed_at`) shown on each order line, in order details, Reports and Excel exports.
 - **Cash / Online** when the technician marks a job completed (required when amount > 0). Shown on orders, exports, Reports and the Dashboard "Collected" card (cash vs online split).
+
+## Update — Oct 2026 (4): crisp Audit Log
+
+**Run once:** Supabase → SQL Editor → paste `2-Supabase-Setup/update-2026-10-audit-trim.sql` → **Run**.
+
+- Audit Log is now **order-wise**: each order shows who last modified it and its **last 3 changes**. Older entries are deleted automatically by the database (also per technician / user). Excel upload history keeps the last 20.
+- Statistics cards removed; the page loads only one small list per page (20 orders).
