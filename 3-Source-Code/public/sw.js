@@ -1,5 +1,5 @@
 /* Hitech Services service worker — makes the app installable; job data is never cached */
-const CACHE = 'hitech-v9'
+const CACHE = 'hitech-v10'
 const SHELL = ['./', './index.html', './offline.html', './config.js', './manifest.json', './manifest-tech.json', './logo.png', './logo-160.png', './tech/']
 
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL))) })
@@ -29,10 +29,9 @@ self.addEventListener('push', (e) => {
   let d = {}
   try { d = e.data ? e.data.json() : {} } catch { d = { title: 'HT Jobs', body: e.data && e.data.text() } }
   e.waitUntil((async () => {
+    // Open app windows refresh their job list; the notification is shown every time (app open or closed)
     const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-    const visible = wins.filter((c) => c.visibilityState === 'visible')
-    // App open on screen → it rings and shows its own alert; just tell it to refresh
-    if (visible.length) { visible.forEach((c) => c.postMessage({ type: 'NEW_JOBS' })); return }
+    wins.forEach((c) => c.postMessage({ type: 'NEW_JOBS' }))
     await self.registration.showNotification(d.title || 'New job assigned', {
       body: d.body || 'Open HT Jobs to see it',
       icon: d.icon || './icons/tech-192.png',
@@ -40,7 +39,7 @@ self.addEventListener('push', (e) => {
       tag: 'ht-new-jobs',          // a newer alert replaces the older one…
       renotify: true,              // …and still rings again
       requireInteraction: true,    // stays until the technician taps it
-      vibrate: [700, 400, 700, 400, 700, 400, 700, 400, 700, 400, 700, 400, 700, 400, 700],   // ~10 s on Android
+      vibrate: [300, 150, 300],
       data: { url: d.url || './tech/' },
     })
   })())

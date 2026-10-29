@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Phone, MapPin, MessageCircle, ChevronRight, X, CheckCircle2, XCircle, Clock, RefreshCw, LogOut,
-  User, Lock, Send, Search, RotateCcw, Pencil, KeyRound, Wifi, WifiOff, CalendarDays, ClipboardList, CalendarClock, Banknote, Smartphone, BellRing, Volume2,
+  User, Lock, Send, Search, RotateCcw, Pencil, KeyRound, Wifi, WifiOff, CalendarDays, ClipboardList, CalendarClock, Banknote, Smartphone, BellRing,
 } from 'lucide-react'
 import { supabase, rpc, errMsg } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -11,9 +11,7 @@ import { useOrdersRealtime } from '../hooks/useRealtime'
 import { addDays, todayIST, isTodayIST, fmtDate, fmtDayIST, fmtDateTime, fmtMoney, mapsUrl, telUrl, waUrl } from '../lib/format'
 import Logo from '../components/Logo'
 import WelcomeModal from '../components/WelcomeModal'
-import NewJobsAlert from './NewJobsAlert'
 import { usePushAlerts } from './usePushAlerts'
-import { playNewJobAlert, stopNewJobAlert, primeAlertSound } from '../lib/alertSound'
 import IOSInstallSheet from '../components/ui/IOSInstallSheet'
 
 const REASONS = [
@@ -342,14 +340,6 @@ function AccountSheet({ onClose }) {
             <button disabled={busy} className="px-4 rounded-2xl bg-brand-600 text-white font-semibold disabled:opacity-50"><KeyRound size={18} /></button>
           </div>
         </form>
-        <div className="rounded-2xl bg-slate-50 border border-slate-100 p-4">
-          <p className="text-sm font-semibold text-slate-700">New-job alert sound</p>
-          <p className="text-xs text-slate-500 mt-0.5">Plays for 10 seconds when the office assigns you a job. Keep the phone volume up and silent mode off.</p>
-          <div className="flex gap-2 mt-3">
-            <button onClick={() => playNewJobAlert()} className="flex-1 py-3 rounded-xl bg-brand-600 text-white font-semibold flex items-center justify-center gap-2 active:scale-[.98]"><Volume2 size={18} /> Test sound</button>
-            <button onClick={stopNewJobAlert} className="px-4 py-3 rounded-xl border-2 border-slate-200 text-slate-600 font-semibold active:bg-white">Stop</button>
-          </div>
-        </div>
         <button onClick={logout} className="w-full py-3.5 rounded-2xl border-2 border-slate-200 text-slate-700 font-semibold flex items-center justify-center gap-2 active:bg-slate-50"><LogOut size={18} /> Logout</button>
       </div>
     </Sheet>
@@ -367,8 +357,6 @@ export default function TechApp() {
   const [search, setSearch] = useState('')
   const [newIds, setNewIds] = useState(() => new Set())
   const knownIds = useRef(null)
-  const liveNew = useRef(new Set())   // jobs that arrived through a live event (= assigned right now)
-  const [soundBlocked, setSoundBlocked] = useState(false)
   const liveRef = useRef(false)
   const [historyDays, setHistoryDays] = useState(HISTORY_SHORT)
 
@@ -403,37 +391,22 @@ export default function TechApp() {
         setNewIds((prev) => new Set([...prev, ...fresh.map((j) => j.id)]))
         setTab('PENDING')
         // Ring only for jobs assigned just now (not for old jobs seen when the app is opened later)
-        // (a live event this moment, or assigned within 10 min — tolerant of a wrong phone clock)
-        const justNow = fresh.filter((j) => liveNew.current.has(j.id) || !j.assigned_at || Math.abs(Date.now() - new Date(j.assigned_at).getTime()) < 10 * 60_000)
-        fresh.forEach((j) => liveNew.current.delete(j.id))
-        if (justNow.length) {
-          setAlertJobs((prev) => [...justNow, ...prev.filter((p) => !justNow.some((j) => j.id === p.id))])
-          playNewJobAlert().then((ok) => { if (!ok) setSoundBlocked(true) })
-        } else {
-          toast(fresh.length === 1 ? `New job: ${fresh[0].customer_name}` : `${fresh.length} new jobs`, 'info', 5000)
-        }
+        // The phone notification (web push) is the alert; here new jobs are just highlighted as NEW
       }
     }
     knownIds.current = ids
   }, [jobs, isSuccess, toast])
 
   const refresh = useCallback(() => qc.invalidateQueries({ queryKey: ['my-jobs'] }), [qc])
-  const [alertJobs, setAlertJobs] = useState([])
-  const closeAlert = () => { stopNewJobAlert(); setAlertJobs([]); setSoundBlocked(false) }
   const push = usePushAlerts(technician, user)
   const [iosHelp, setIosHelp] = useState(false)
-  const [hidePushCard, setHidePushCard] = useState(() => { try { return localStorage.getItem('ht_push_card_hidden') === '1' } catch { return false } })
-  useEffect(() => { primeAlertSound() }, [])
-  // A push arriving while the app is open → just refresh (the in-app alert does the ringing)
+  // A notification arriving while the app is open → refresh the list
   useEffect(() => {
     const onMsg = (e) => e.data?.type === 'NEW_JOBS' && refresh()
     navigator.serviceWorker?.addEventListener('message', onMsg)
     return () => navigator.serviceWorker?.removeEventListener('message', onMsg)
   }, [refresh])
-  const live = useOrdersRealtime({
-    enabled: !!technician, filter: technician ? `technician_id=eq.${technician.id}` : undefined, channelName: 'tech', onChange: refresh,
-    onEvent: (p) => { const n = p.new; if (n?.id && n.technician_id === technician?.id && !knownIds.current?.has(n.id)) liveNew.current.add(n.id) },
-  })
+  const live = useOrdersRealtime({ enabled: !!technician, filter: technician ? `technician_id=eq.${technician.id}` : undefined, channelName: 'tech', onChange: refresh })
   liveRef.current = live
 
   useEffect(() => {
@@ -499,20 +472,19 @@ export default function TechApp() {
       </header>
 
       <main className="stagger p-3 space-y-3" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1.5rem)' }}>
-        {!hidePushCard && ['ask', 'install-first', 'blocked'].includes(push.state) && (
+        {['ask', 'install-first', 'blocked'].includes(push.state) && (
           <div className="rounded-3xl bg-gradient-to-br from-brand-600 to-ink-900 text-white p-4 flex items-start gap-3 shadow-soft">
             <BellRing size={22} className="flex-shrink-0 mt-0.5 text-sky-300" />
             <div className="flex-1 min-w-0">
-              <p className="font-bold">Get new-job alerts</p>
+              <p className="font-bold">Turn on job notifications</p>
               <p className="text-sm text-sky-100/90 mt-0.5">
-                {push.state === 'ask' ? 'Your phone will ring when the office assigns you a job, even when this app is closed.'
+                {push.state === 'ask' ? 'Get a phone notification every time the office assigns you a job, even when this app is closed.'
                   : push.state === 'install-first' ? 'On iPhone, add HT Jobs to your Home Screen first, then open it from there to turn on alerts.'
                   : 'Alerts are blocked. Allow notifications for HT Jobs in your phone Settings.'}
               </p>
-              {push.state === 'ask' && <button onClick={push.enable} disabled={push.busy} className="mt-3 px-4 py-2.5 rounded-xl bg-white text-brand-700 font-bold text-sm active:scale-[.98]">{push.busy ? 'Turning on…' : 'Turn on alerts'}</button>}
+              {push.state === 'ask' && <button onClick={push.enable} disabled={push.busy} className="mt-3 px-4 py-2.5 rounded-xl bg-white text-brand-700 font-bold text-sm active:scale-[.98]">{push.busy ? 'Turning on…' : 'Turn on notifications'}</button>}
               {push.state === 'install-first' && <button onClick={() => setIosHelp(true)} className="mt-3 px-4 py-2.5 rounded-xl bg-white text-brand-700 font-bold text-sm">How to add to Home Screen</button>}
             </div>
-            <button onClick={() => { setHidePushCard(true); try { localStorage.setItem('ht_push_card_hidden', '1') } catch { /* ignore */ } }} aria-label="Hide" className="p-1 -m-1 text-white/60"><X size={18} /></button>
           </div>
         )}
         {jobs.length > 6 && (
@@ -544,7 +516,6 @@ export default function TechApp() {
         ]} closeLabel="View my jobs" />
       {open && <JobDetail job={open} onClose={() => setOpenId(null)} refresh={refresh} />}
       {showAccount && <AccountSheet onClose={() => setShowAccount(false)} />}
-      {alertJobs.length > 0 && <NewJobsAlert jobs={alertJobs} soundBlocked={soundBlocked} onPlay={() => { setSoundBlocked(false); playNewJobAlert() }} onClose={closeAlert} onView={() => { closeAlert(); setTab('PENDING'); window.scrollTo({ top: 0, behavior: 'smooth' }) }} />}
       {iosHelp && <IOSInstallSheet appName="HT Jobs" onClose={() => setIosHelp(false)} />}
     </div>
   )

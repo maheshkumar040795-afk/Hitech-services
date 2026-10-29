@@ -186,8 +186,7 @@ Only **ORDER ID** and **CUSTOMER NAME** are required. Download **Template** on t
 
 ## Update — Oct 2026 (6): new-job alerts on technicians' phones
 
-- **App open:** the moment the office assigns jobs, HT Jobs shows "N new jobs assigned to you" with the customers, rings for 10 seconds and vibrates. Only for jobs assigned in the last 3 minutes.
-- **App closed / phone locked:** a phone notification ("2 new jobs assigned to you"), via web push. A bulk assignment sends one notification. Technicians tap **Turn on alerts** once in HT Jobs (iPhone: add HT Jobs to the Home Screen first, iOS 16.4+).
+- **Phone notification only** (no in-app sound or popup): "2 new jobs assigned to you" via web push, shown whether HT Jobs is open, closed or the phone is locked. A bulk assignment sends one notification; new jobs are highlighted as NEW in the app. Each technician taps **Turn on notifications** once in HT Jobs (iPhone: add HT Jobs to the Home Screen first, iOS 16.4+).
 
 **One-time setup**
 1. SQL Editor → run `2-Supabase-Setup/update-2026-10-job-alerts.sql`.
