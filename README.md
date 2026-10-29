@@ -183,3 +183,13 @@ Only **ORDER ID** and **CUSTOMER NAME** are required. Download **Template** on t
 - **Searchable technician picker** everywhere (orders row, bulk assign, new/edit order, filters, Reports, ID Cards): type ID, name, area or mobile; shows each technician's open jobs.
 - **Technicians page:** filters Active / Working today / App not set up / Inactive, 24 cards at a time with "Show more".
 - **Settings → Download full backup:** one Excel with Orders, Comments, Technicians, Bills, Users, Company. Do it weekly and keep in Google Drive.
+
+## Update — Oct 2026 (6): new-job alerts on technicians' phones
+
+- **App open:** the moment the office assigns jobs, HT Jobs shows "N new jobs assigned to you" with the customers, rings for 10 seconds and vibrates. Only for jobs assigned in the last 3 minutes.
+- **App closed / phone locked:** a phone notification ("2 new jobs assigned to you"), via web push. A bulk assignment sends one notification. Technicians tap **Turn on alerts** once in HT Jobs (iPhone: add HT Jobs to the Home Screen first, iOS 16.4+).
+
+**One-time setup**
+1. SQL Editor → run `2-Supabase-Setup/update-2026-10-job-alerts.sql`.
+2. Edge Functions → Deploy new function → name **`notify-assign`** → paste `2-Supabase-Setup/functions/notify-assign/index.ts` → turn **off** "Verify JWT" → Deploy.
+3. Edge Functions → Secrets → add `VAPID_PUBLIC_KEY` (same as `WEB_PUSH_PUBLIC_KEY` in config.js), `VAPID_PRIVATE_KEY` (kept privately — never put it in this repo), `VAPID_SUBJECT` = `mailto:you@yourdomain`.

@@ -4,6 +4,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 const here = path.dirname(fileURLToPath(import.meta.url))
+// Keep the live site's settings: the build empties 1-Website, so remember config.js and put it back afterwards
+const liveConfigPath = path.resolve(here, '../1-Website/config.js')
+const liveConfig = fs.existsSync(liveConfigPath) ? fs.readFileSync(liveConfigPath, 'utf8') : null
 
 // Output is a plain static site:
 //  • relative paths  → works on GitHub Pages (custom domain or /repo-name/) and opened as a file
@@ -35,6 +38,7 @@ export default defineConfig({
           .replace('<script src="../config.js">', '<script>window.HT_TECH_ENTRY = true</script>\n    <script src="../config.js">')
         fs.mkdirSync(path.join(out, 'tech'), { recursive: true })
         fs.writeFileSync(path.join(out, 'tech', 'index.html'), html)
+        if (liveConfig && !liveConfig.includes('YOUR-PROJECT-ID')) fs.writeFileSync(liveConfigPath, liveConfig)
       },
     },
   ],
