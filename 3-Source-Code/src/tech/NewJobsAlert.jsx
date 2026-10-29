@@ -1,7 +1,7 @@
-import { BellRing, MapPin, X } from 'lucide-react'
+import { BellRing, MapPin, X, Volume2 } from 'lucide-react'
 
 /** Full-screen alert the moment the office assigns jobs (sound + vibration are started by the caller) */
-export default function NewJobsAlert({ jobs, onView, onClose }) {
+export default function NewJobsAlert({ jobs, onView, onClose, soundBlocked, onPlay }) {
   const n = jobs.length
   return (
     <div className="fixed inset-0 z-[260] bg-ink-950/70 backdrop-blur-md flex items-center justify-center p-5 animate-fade-in" role="alertdialog" aria-label={`${n} new jobs assigned`}>
@@ -24,7 +24,8 @@ export default function NewJobsAlert({ jobs, onView, onClose }) {
           ))}
           {n > 6 && <li className="text-center text-xs text-slate-400">+{n - 6} more</li>}
         </ul>
-        <div className="p-5">
+        <div className="p-5 space-y-2">
+          {soundBlocked && <button onClick={onPlay} className="w-full py-3 rounded-2xl border-2 border-brand-200 text-brand-700 font-bold flex items-center justify-center gap-2 active:bg-brand-50"><Volume2 size={18} /> Play alert sound</button>}
           <button onClick={onView} className="btn-primary w-full justify-center py-4 rounded-2xl text-base font-bold">View my jobs</button>
         </div>
       </div>

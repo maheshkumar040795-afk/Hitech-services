@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Phone, MapPin, MessageCircle, ChevronRight, X, CheckCircle2, XCircle, Clock, RefreshCw, LogOut,
-  User, Lock, Send, Search, RotateCcw, Pencil, KeyRound, Wifi, WifiOff, CalendarDays, ClipboardList, CalendarClock, Banknote, Smartphone, BellRing,
+  User, Lock, Send, Search, RotateCcw, Pencil, KeyRound, Wifi, WifiOff, CalendarDays, ClipboardList, CalendarClock, Banknote, Smartphone, BellRing, Volume2,
 } from 'lucide-react'
 import { supabase, rpc, errMsg } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -342,6 +342,14 @@ function AccountSheet({ onClose }) {
             <button disabled={busy} className="px-4 rounded-2xl bg-brand-600 text-white font-semibold disabled:opacity-50"><KeyRound size={18} /></button>
           </div>
         </form>
+        <div className="rounded-2xl bg-slate-50 border border-slate-100 p-4">
+          <p className="text-sm font-semibold text-slate-700">New-job alert sound</p>
+          <p className="text-xs text-slate-500 mt-0.5">Plays for 10 seconds when the office assigns you a job. Keep the phone volume up and silent mode off.</p>
+          <div className="flex gap-2 mt-3">
+            <button onClick={() => playNewJobAlert()} className="flex-1 py-3 rounded-xl bg-brand-600 text-white font-semibold flex items-center justify-center gap-2 active:scale-[.98]"><Volume2 size={18} /> Test sound</button>
+            <button onClick={stopNewJobAlert} className="px-4 py-3 rounded-xl border-2 border-slate-200 text-slate-600 font-semibold active:bg-white">Stop</button>
+          </div>
+        </div>
         <button onClick={logout} className="w-full py-3.5 rounded-2xl border-2 border-slate-200 text-slate-700 font-semibold flex items-center justify-center gap-2 active:bg-slate-50"><LogOut size={18} /> Logout</button>
       </div>
     </Sheet>
@@ -359,6 +367,8 @@ export default function TechApp() {
   const [search, setSearch] = useState('')
   const [newIds, setNewIds] = useState(() => new Set())
   const knownIds = useRef(null)
+  const liveNew = useRef(new Set())   // jobs that arrived through a live event (= assigned right now)
+  const [soundBlocked, setSoundBlocked] = useState(false)
   const liveRef = useRef(false)
   const [historyDays, setHistoryDays] = useState(HISTORY_SHORT)
 
@@ -393,10 +403,12 @@ export default function TechApp() {
         setNewIds((prev) => new Set([...prev, ...fresh.map((j) => j.id)]))
         setTab('PENDING')
         // Ring only for jobs assigned just now (not for old jobs seen when the app is opened later)
-        const justNow = fresh.filter((j) => !j.assigned_at || Date.now() - new Date(j.assigned_at).getTime() < 3 * 60_000)
+        // (a live event this moment, or assigned within 10 min — tolerant of a wrong phone clock)
+        const justNow = fresh.filter((j) => liveNew.current.has(j.id) || !j.assigned_at || Math.abs(Date.now() - new Date(j.assigned_at).getTime()) < 10 * 60_000)
+        fresh.forEach((j) => liveNew.current.delete(j.id))
         if (justNow.length) {
           setAlertJobs((prev) => [...justNow, ...prev.filter((p) => !justNow.some((j) => j.id === p.id))])
-          playNewJobAlert(10)
+          playNewJobAlert().then((ok) => { if (!ok) setSoundBlocked(true) })
         } else {
           toast(fresh.length === 1 ? `New job: ${fresh[0].customer_name}` : `${fresh.length} new jobs`, 'info', 5000)
         }
@@ -407,7 +419,7 @@ export default function TechApp() {
 
   const refresh = useCallback(() => qc.invalidateQueries({ queryKey: ['my-jobs'] }), [qc])
   const [alertJobs, setAlertJobs] = useState([])
-  const closeAlert = () => { stopNewJobAlert(); setAlertJobs([]) }
+  const closeAlert = () => { stopNewJobAlert(); setAlertJobs([]); setSoundBlocked(false) }
   const push = usePushAlerts(technician, user)
   const [iosHelp, setIosHelp] = useState(false)
   const [hidePushCard, setHidePushCard] = useState(() => { try { return localStorage.getItem('ht_push_card_hidden') === '1' } catch { return false } })
@@ -418,7 +430,10 @@ export default function TechApp() {
     navigator.serviceWorker?.addEventListener('message', onMsg)
     return () => navigator.serviceWorker?.removeEventListener('message', onMsg)
   }, [refresh])
-  const live = useOrdersRealtime({ enabled: !!technician, filter: technician ? `technician_id=eq.${technician.id}` : undefined, channelName: 'tech', onChange: refresh })
+  const live = useOrdersRealtime({
+    enabled: !!technician, filter: technician ? `technician_id=eq.${technician.id}` : undefined, channelName: 'tech', onChange: refresh,
+    onEvent: (p) => { const n = p.new; if (n?.id && n.technician_id === technician?.id && !knownIds.current?.has(n.id)) liveNew.current.add(n.id) },
+  })
   liveRef.current = live
 
   useEffect(() => {
@@ -529,7 +544,7 @@ export default function TechApp() {
         ]} closeLabel="View my jobs" />
       {open && <JobDetail job={open} onClose={() => setOpenId(null)} refresh={refresh} />}
       {showAccount && <AccountSheet onClose={() => setShowAccount(false)} />}
-      {alertJobs.length > 0 && <NewJobsAlert jobs={alertJobs} onClose={closeAlert} onView={() => { closeAlert(); setTab('PENDING'); window.scrollTo({ top: 0, behavior: 'smooth' }) }} />}
+      {alertJobs.length > 0 && <NewJobsAlert jobs={alertJobs} soundBlocked={soundBlocked} onPlay={() => { setSoundBlocked(false); playNewJobAlert() }} onClose={closeAlert} onView={() => { closeAlert(); setTab('PENDING'); window.scrollTo({ top: 0, behavior: 'smooth' }) }} />}
       {iosHelp && <IOSInstallSheet appName="HT Jobs" onClose={() => setIosHelp(false)} />}
     </div>
   )
