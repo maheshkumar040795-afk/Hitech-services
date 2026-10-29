@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react'
-import { UserRoundSearch } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { UserRoundSearch, Plus } from 'lucide-react'
 import { useTechnicians } from '../hooks/useData'
 import { techLabel } from '../lib/format'
 import { useToast } from '../context/ToastContext'
@@ -13,6 +13,21 @@ export default function IdCardsPage() {
   const { toast } = useToast()
   const { data: techs = [] } = useTechnicians()
   const [pick, setPick] = useState('')
+  const [height, setHeight] = useState(900)
+  const observer = useRef(null)
+
+  // Grow the frame to fit the generator, so the page scrolls normally (no box-inside-a-box on phones)
+  const onLoad = () => {
+    const doc = frame.current?.contentDocument
+    if (!doc?.body) return
+    const fit = () => setHeight(Math.max(400, Math.ceil(doc.body.getBoundingClientRect().height) + 8))
+    observer.current?.disconnect()
+    observer.current = new ResizeObserver(fit)
+    observer.current.observe(doc.body)
+    fit()
+  }
+  useEffect(() => () => observer.current?.disconnect(), [])
+  const newCard = () => { setPick(''); frame.current?.contentWindow?.resetForm?.(); frame.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
 
   const fill = (id) => {
     setPick(id)
@@ -39,19 +54,18 @@ export default function IdCardsPage() {
           <p className="text-sm text-slate-500 mt-0.5">Generate employee ID cards · download PNG, PDF or print-ready CMYK</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative">
+          <div className="relative flex-1 sm:flex-none">
             <UserRoundSearch size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            <select className="input pl-9 py-2 min-w-[240px]" value={pick} onChange={(e) => fill(e.target.value)}>
+            <select className="input pl-9 py-2 w-full sm:w-auto sm:min-w-[240px]" value={pick} onChange={(e) => fill(e.target.value)}>
               <option value="">Fill from technician…</option>
               {techs.filter((t) => t.is_active).map((t) => <option key={t.id} value={t.id}>{techLabel(t)}</option>)}
             </select>
           </div>
+          <button onClick={newCard} className="btn-primary text-xs py-2.5"><Plus size={14} /> New ID Card</button>
         </div>
       </div>
-      <div className="card p-0 overflow-hidden">
-        <iframe ref={frame} src="./id-cards.html" title="ID card generator" className="w-full block border-0"
-          style={{ height: 'max(720px, calc(100vh - var(--header-h) - 150px))' }} />
-      </div>
+      <iframe ref={frame} src="./id-cards.html" title="ID card generator" onLoad={onLoad} scrolling="no"
+        className="w-full block border-0 bg-transparent" style={{ height }} />
     </div>
   )
 }

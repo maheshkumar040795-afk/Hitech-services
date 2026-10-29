@@ -9,6 +9,8 @@ import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { useOrdersRealtime } from '../../hooks/useRealtime'
 import { usePinResets } from '../../hooks/useData'
+import WelcomeModal from '../WelcomeModal'
+import { ShieldCheck, CalendarDays, KeyRound as KeyIcon } from 'lucide-react'
 import Logo from '../Logo'
 
 const NAV_ITEMS = [
@@ -121,6 +123,12 @@ export default function AppShell() {
 
   return (
     <div className="flex h-screen overflow-hidden">
+      <WelcomeModal name={user?.name} badge={user?.role === 'ADMIN' ? 'Administrator' : 'Office Staff'}
+        lines={[
+          <><ShieldCheck size={16} className="text-brand-600 flex-shrink-0" /> Signed in to the Hitech Services operations dashboard</>,
+          <><CalendarDays size={16} className="text-brand-600 flex-shrink-0" /> Live orders, technicians and reports are ready</>,
+          ...(pinResets.length ? [<><KeyIcon size={16} className="text-amber-600 flex-shrink-0" /> {pinResets.length} technician{pinResets.length > 1 ? 's' : ''} asked for a new PIN</>] : []),
+        ]} closeLabel="Go to dashboard" />
       <div className="hidden lg:flex"><Sidebar /></div>
       {mobileOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex">

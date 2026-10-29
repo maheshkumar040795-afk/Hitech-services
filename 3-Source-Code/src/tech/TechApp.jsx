@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Phone, MapPin, MessageCircle, ChevronRight, X, CheckCircle2, XCircle, Clock, RefreshCw, LogOut,
-  User, Lock, Send, Search, RotateCcw, Pencil, KeyRound, Wifi, WifiOff, CalendarDays,
+  User, Lock, Send, Search, RotateCcw, Pencil, KeyRound, Wifi, WifiOff, CalendarDays, ClipboardList,
 } from 'lucide-react'
 import { supabase, rpc, errMsg } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -10,6 +10,7 @@ import { useToast } from '../context/ToastContext'
 import { useOrdersRealtime } from '../hooks/useRealtime'
 import { addDays, todayIST, isTodayIST, fmtDate, fmtDateTime, fmtMoney, mapsUrl, telUrl, waUrl } from '../lib/format'
 import Logo from '../components/Logo'
+import WelcomeModal from '../components/WelcomeModal'
 
 const REASONS = [
   'Customer not available',
@@ -442,6 +443,11 @@ export default function TechApp() {
           ) : list.map((j) => <JobCard key={j.id} job={j} isNew={newIds.has(j.id)} onOpen={() => openJob(j.id)} />)}
       </main>
 
+      <WelcomeModal mobile name={user?.name} badge={technician?.tech_code ? `Technician ID · ${technician.tech_code}` : 'Technician'}
+        lines={[
+          <><ClipboardList size={16} className="text-brand-600 flex-shrink-0" /> {isLoading ? 'Loading your jobs…' : pending.length ? `You have ${pending.length} pending job${pending.length > 1 ? 's' : ''}` : 'No pending jobs right now'}</>,
+          <><CheckCircle2 size={16} className="text-emerald-600 flex-shrink-0" /> Mark each job Completed with the amount collected</>,
+        ]} closeLabel="View my jobs" />
       {open && <JobDetail job={open} onClose={() => setOpenId(null)} refresh={refresh} />}
       {showAccount && <AccountSheet onClose={() => setShowAccount(false)} />}
     </div>

@@ -19,7 +19,7 @@ export default function ForgotPinSheet({ initialMobile = '', onClose }) {
     catch (err) {
       const m = err?.message || ''
       setError(m.includes('Failed to fetch') ? 'No internet connection. Please try again.'
-        : m.includes('request_pin_reset') ? 'This feature is not switched on yet. Please call the office.' : m)
+        : m.includes('request_pin_reset') || m.includes('schema cache') ? 'PIN reset is not set up on the server yet (office: run the Forgot PIN database update). Please call the office for now.' : m)
     } finally { setBusy(false) }
   }
 

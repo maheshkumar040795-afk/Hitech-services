@@ -4,6 +4,7 @@
 <script>
   // Part of the Hitech Services admin portal: open it from the portal (ID Cards menu), not directly.
   if (window.top === window.self) location.replace('./#/id-cards');
+  else document.documentElement.classList.add('embedded');   // inside the portal: portal shows the title bar
 </script>
 
 <meta charset="UTF-8">
@@ -262,6 +263,24 @@
   .issued-table .acts button:disabled{opacity:.5;cursor:progress;}
   .empty-state{text-align:center;color:var(--muted);font-size:13px;padding:24px 0;}
   .issued-table tbody tr.empty-row td{border-bottom:none;}
+
+  /* ── Hitech portal additions ── */
+  /* Photo: the (invisible) file input covers the whole drop area, so a tap opens the picker directly.
+     Programmatic input.click() on a hidden input is unreliable on phones, especially inside the portal. */
+  .photo-drop{position:relative;}
+  .photo-drop input[type=file]{display:block !important;position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:0;z-index:2;}
+  html.embedded body{min-height:0;background:transparent;}
+  html.embedded header{display:none;}
+  html.embedded main{padding:0;max-width:none;}
+  html.embedded .preview-wrap{position:static;}
+  @media (max-width:640px){
+    main{padding:12px;gap:14px;}
+    html.embedded main{padding:0;}
+    .panel{padding:18px 16px;border-radius:16px;}
+    header{padding:14px 16px;}
+    .preview-wrap{position:static;}
+    .row2{gap:10px;}
+  }
 </style>
 </head>
 <body>
@@ -285,7 +304,7 @@
 
     <label class="field" style="margin-bottom:22px;">
       <label>Employee Photo</label>
-      <div class="photo-drop" id="photoDrop" onclick="document.getElementById('photoInput')?.click()">
+      <div class="photo-drop" id="photoDrop">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
         <span>Click to upload photo</span>
         <input type="file" id="photoInput" accept="image/*" onchange="handlePhoto(event)">

@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { supabase, loginToEmail, errMsg } from '../lib/supabase'
+import { markWelcome } from '../components/WelcomeModal'
 
 const AuthContext = createContext(null)
 
@@ -53,6 +54,7 @@ export function AuthProvider({ children }) {
     setAuthError('')
     const { error } = await supabase.auth.signInWithPassword({ email: loginToEmail(loginId), password })
     if (error) throw new Error(errMsg(error))
+    markWelcome()
   }, [])
 
   const logout = useCallback(async () => {
