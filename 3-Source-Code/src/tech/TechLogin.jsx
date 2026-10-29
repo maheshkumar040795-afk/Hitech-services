@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { usePWA } from '../hooks/usePWA'
 import Logo from '../components/Logo'
 
-const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent)
+import IOSInstallSheet, { isIOS } from '../components/ui/IOSInstallSheet'
 
 export default function TechLogin() {
   const { login, authError } = useAuth()
@@ -15,6 +15,7 @@ export default function TechLogin() {
   const [show, setShow] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [iosHelp, setIosHelp] = useState(false)
 
   const submit = async (e) => {
     e.preventDefault()
@@ -74,15 +75,16 @@ export default function TechLogin() {
                 <Download size={16} /> Install app on this phone
               </button>
             ) : isIOS() ? (
-              <p className="text-slate-300 text-xs text-center flex items-center justify-center gap-1 flex-wrap">
-                To install: tap <Share size={13} className="inline" /> Share → <b>Add to Home Screen</b>
-              </p>
+              <button type="button" onClick={() => setIosHelp(true)} className="glass-dark w-full py-3 rounded-2xl text-white text-sm font-semibold flex items-center justify-center gap-2 active:scale-[.98] transition">
+                <Share size={16} /> Install app on this iPhone
+              </button>
             ) : (
               <p className="text-slate-400 text-xs text-center">To install: Chrome menu ⋮ → <b>Add to Home screen</b></p>
             )}
           </div>
         )}
       </div>
+      {iosHelp && <IOSInstallSheet appName="HT Jobs" onClose={() => setIosHelp(false)} />}
       <Link to="/login" className="relative text-center text-xs text-slate-500 pb-6" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1.5rem)' }}>Office login</Link>
     </div>
   )

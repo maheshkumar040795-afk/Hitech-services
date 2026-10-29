@@ -7,7 +7,7 @@
     <title>Hitech Services — Operations</title>
 
     <link rel="manifest" id="app-manifest" href="./manifest.json" />
-    <meta name="theme-color" id="app-theme" content="#3549e8" />
+    <meta name="theme-color" id="app-theme" content="#1d55e0" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -20,14 +20,24 @@
 
     <!-- Technician links (…/#/tech) install as a separate "HT Jobs" app -->
     <script>
+      // Office and technician pages install as two different apps (Hitech Ops / HT Jobs).
+      // Re-applied on every route change so iPhone "Add to Home Screen" always picks the right name, icon and start page.
       (function () {
-        if (location.hash.indexOf('#/tech') === 0) {
-          document.getElementById('app-manifest').href = './manifest-tech.json'
-          document.getElementById('app-theme').content = '#0b1122'
-          document.getElementById('app-title').content = 'HT Jobs'
-          document.getElementById('app-touch-icon').href = './icons/tech-apple-touch-icon.png'
-          document.title = 'HT Jobs — Hitech Services'
+        function apply() {
+          var tech = location.hash.indexOf('#/tech') === 0
+          document.getElementById('app-manifest').href = tech ? './manifest-tech.json' : './manifest.json'
+          document.getElementById('app-theme').content = tech ? '#0b1122' : '#1d55e0'
+          document.getElementById('app-title').content = tech ? 'HT Jobs' : 'Hitech Ops'
+          document.getElementById('app-touch-icon').href = tech ? './icons/tech-apple-touch-icon.png' : './icons/apple-touch-icon.png'
+          document.title = tech ? 'HT Jobs — Hitech Services' : 'Hitech Services — Operations'
         }
+        apply()
+        window.addEventListener('hashchange', apply)
+        window.addEventListener('popstate', apply)
+        ;['pushState', 'replaceState'].forEach(function (k) {   // in-app navigation (router links)
+          var orig = history[k]
+          history[k] = function () { var r = orig.apply(this, arguments); apply(); return r }
+        })
       })()
     </script>
     <script defer src="./assets/app.js"></script>

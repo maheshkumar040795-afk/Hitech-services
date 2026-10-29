@@ -29,7 +29,7 @@ export function usePWA() {
     window.addEventListener('beforeinstallprompt', onBeforeInstall)
 
     // ── Already installed (standalone mode) ──
-    if (window.matchMedia('(display-mode: standalone)').matches) setIsInstalled(true)
+    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) setIsInstalled(true)  // navigator.standalone = iPhone home-screen app
 
     // ── Register service worker ──
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {

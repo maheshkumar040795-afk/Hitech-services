@@ -7,14 +7,18 @@ import { usePWA } from '../../hooks/usePWA'
 import { WifiOff, RefreshCw, Download, X } from 'lucide-react'
 import { useState } from 'react'
 import { useLocation } from 'react-router-dom'
+import IOSInstallSheet, { isIOS } from './IOSInstallSheet'
+import Logo from '../Logo'
 
 export default function PWABanners() {
   const { isOnline, updateAvailable, installPrompt, isInstalled, promptInstall, applyUpdate } = usePWA()
-  const [dismissedInstall, setDismissedInstall] = useState(false)
+  const [dismissedInstall, setDismissedInstall] = useState(() => { try { return sessionStorage.getItem('ht_install_dismissed') === '1' } catch { return false } })
+  const [iosHelp, setIosHelp] = useState(false)
+  const dismiss = () => { setDismissedInstall(true); try { sessionStorage.setItem('ht_install_dismissed', '1') } catch { /* ignore */ } }
   const { pathname } = useLocation()
   const isTechApp = pathname === '/tech' || pathname.startsWith('/tech/')
   // The technician login screen has its own install button
-  if (pathname === '/tech/login') return null
+  const onLoginScreen = pathname === '/login' || pathname === '/tech/login'
 
   return (
     <>
@@ -43,24 +47,25 @@ export default function PWABanners() {
       )}
 
       {/* Install prompt (only on mobile, not already installed, not dismissed) */}
-      {installPrompt && !isInstalled && !dismissedInstall && (
+      {iosHelp && <IOSInstallSheet appName={isTechApp ? 'HT Jobs' : 'Hitech Ops'} onClose={() => { setIosHelp(false); dismiss() }} />}
+      {!onLoginScreen && (installPrompt || isIOS()) && !isInstalled && !dismissedInstall && !iosHelp && (
         <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-80 z-[200]
                         bg-white border border-slate-200 rounded-2xl shadow-2xl p-4 animate-slide-up">
           <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center text-white font-bold text-lg flex-shrink-0">H</div>
+            <Logo size={40} />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-slate-900">Install {isTechApp ? 'HT Jobs' : 'Hitech Ops'}</p>
               <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">Add to your home screen — opens like a normal app.</p>
             </div>
-            <button onClick={() => setDismissedInstall(true)} className="text-slate-400 hover:text-slate-600 flex-shrink-0">
+            <button onClick={dismiss} className="text-slate-400 hover:text-slate-600 flex-shrink-0">
               <X size={15} />
             </button>
           </div>
           <div className="flex gap-2 mt-3">
-            <button onClick={() => setDismissedInstall(true)} className="btn-secondary flex-1 justify-center text-xs py-2">
+            <button onClick={dismiss} className="btn-secondary flex-1 justify-center text-xs py-2">
               Not now
             </button>
-            <button onClick={promptInstall} className="btn-primary flex-1 justify-center text-xs py-2">
+            <button onClick={() => (installPrompt ? promptInstall() : setIosHelp(true))} className="btn-primary flex-1 justify-center text-xs py-2">
               <Download size={13} /> Install
             </button>
           </div>
