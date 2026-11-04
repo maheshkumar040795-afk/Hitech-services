@@ -5,6 +5,8 @@ import { CheckCircle2, Clock, Package, TrendingUp, TrendingDown, Minus, Search, 
 import { rpc } from '../lib/supabase'
 import { todayIST, addDays, fmtDate, fmtMoney } from '../lib/format'
 import { useTechnicians, useTechStats } from '../hooks/useData'
+import { useOnlineTechs, techStatus, STATUS_META } from '../hooks/usePresence'
+import { Link } from 'react-router-dom'
 
 const PIE_COLORS = ['#10b981', '#f59e0b', '#ef4444']
 const TREND_OPTIONS = [{ days: 7, label: '7 Days' }, { days: 15, label: '15 Days' }, { days: 30, label: '30 Days' }]
@@ -51,6 +53,24 @@ function BarList({ title, items }) {
         {!items?.length && <p className="text-sm text-slate-400 text-center py-4">No data</p>}
       </div>
     </div>
+  )
+}
+
+function TechStatusStrip() {
+  const { data: techs = [] } = useTechnicians()
+  const online = useOnlineTechs()
+  const active = techs.filter((t) => t.is_active)
+  const count = (k) => active.filter((t) => techStatus(t, online) === k).length
+  return (
+    <Link to="/technicians" className="card cursor-pointer px-5 py-3.5 flex flex-wrap items-center gap-x-6 gap-y-2">
+      <span className="text-sm font-heading font-bold text-slate-800">Technicians <span className="text-slate-400 font-medium">({active.length})</span></span>
+      {[['online', 'online now'], ['loggedin', 'logged in'], ['loggedout', 'logged out'], ['noapp', 'app not set up']].map(([k, l]) => (
+        <span key={k} className="flex items-center gap-2 text-sm text-slate-600">
+          <span className={`w-2.5 h-2.5 rounded-full ${STATUS_META[k].dot} ${k === 'online' && count(k) ? 'animate-pulse-dot' : ''}`} />
+          <b className="text-slate-900 tabular-nums">{count(k)}</b> {l}
+        </span>
+      ))}
+    </Link>
   )
 }
 
@@ -110,6 +130,8 @@ export default function DashboardPage() {
         <Kpi icon={Clock} label="Pending" value={s?.pending} sub={s?.rescheduled ? `incl. ${s.rescheduled} rescheduled` : "Awaiting visit"} color="from-amber-400 to-orange-500" loading={isLoading} />
         <Kpi icon={UserX} label="Unassigned" value={s?.unassigned} sub="Need a technician" color={s?.unassigned ? 'from-rose-500 to-red-600' : 'from-slate-400 to-slate-500'} loading={isLoading} />
       </div>
+
+      <TechStatusStrip />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="card p-5">

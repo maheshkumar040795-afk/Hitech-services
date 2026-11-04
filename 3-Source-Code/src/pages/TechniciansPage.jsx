@@ -10,6 +10,7 @@ import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
 import { useTechnicians, useTechStats, usePinResets, resolvePinResets } from '../hooks/useData'
 import Modal, { Field } from '../components/Modal'
+import { useOnlineTechs, techStatus, STATUS_META, ago } from '../hooks/usePresence'
 
 const EMPTY = { tech_code: '', name: '', mobile: '', city: '', district: '', pincode: '', aadhar: '' }
 const loginState = (t) => (!t.user_id ? 'off' : t.login?.is_active ? 'on' : 'disabled')
@@ -218,9 +219,12 @@ export default function TechniciansPage() {
   const dismissReset = async (techId) => { await resolvePinResets(techId, 'CANCELLED').catch(() => {}); refresh() }
   const ago = (t) => { const m = Math.max(1, Math.round((Date.now() - new Date(t).getTime()) / 60000)); return m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago` }
   const q = search.toLowerCase()
+  const online = useOnlineTechs()
+  const st = (t) => techStatus(t, online)
   const working = (t) => Number(stats[t.id]?.pending || 0) > 0 || Number(stats[t.id]?.done_today || 0) > 0
   const VIEWS = [
     ['active', 'Active', (t) => t.is_active],
+    ['online', 'Online now', (t) => t.is_active && st(t) === 'online'],
     ['working', 'Working today', (t) => t.is_active && working(t)],
     ['noapp', 'App not set up', (t) => t.is_active && loginState(t) !== 'on'],
     ['inactive', 'Inactive', (t) => !t.is_active],
@@ -282,6 +286,17 @@ export default function TechniciansPage() {
         </div>
       </div>
 
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+        {[['online', 'Online now'], ['loggedin', 'Logged in'], ['loggedout', 'Logged out'], ['noapp', 'App not set up'], ['blocked', 'Blocked']].map(([k, l]) => {
+          const n = techs.filter((t) => t.is_active && st(t) === k).length
+          return (
+            <div key={k} className="card px-4 py-3 flex items-center gap-3">
+              <span className={`w-2.5 h-2.5 rounded-full ${STATUS_META[k].dot} ${k === 'online' && n ? 'animate-pulse-dot' : ''}`} />
+              <div><p className="text-xl font-heading font-extrabold text-slate-900 leading-none tabular-nums">{n}</p><p className="text-[11px] text-slate-500 mt-1">{l}</p></div>
+            </div>)
+        })}
+      </div>
+
       {isAdmin && pinResets.length > 0 && (
         <div className="card p-4 border-amber-300/70 bg-amber-50/80">
           <p className="text-sm font-heading font-bold text-amber-900 flex items-center gap-2 mb-3"><KeyRound size={16} /> Forgot PIN requests ({pinResets.length})</p>
@@ -335,11 +350,13 @@ export default function TechniciansPage() {
                       <p className="text-xs text-slate-400 flex items-center gap-1">{t.mobile ? <><Phone size={10} />{t.mobile}</> : <span className="text-amber-600">No mobile</span>}</p>
                     </div>
                   </div>
-                  <span title="HT Jobs app login" className={`text-[10px] px-2 py-0.5 rounded-full font-semibold flex items-center gap-1 flex-shrink-0 ${ls === 'on' ? 'bg-emerald-100 text-emerald-700' : ls === 'disabled' ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'}`}>
-                    <Smartphone size={10} /> {ls === 'on' ? 'App' : ls === 'disabled' ? 'Blocked' : 'No app'}
-                  </span>
+                  {(() => { const k = st(t), m = STATUS_META[k]; return (
+                    <span title={`Last login ${ago(t.last_login_at)} · last seen ${ago(t.last_seen_at)}`} className={`text-[10px] px-2 py-0.5 rounded-full font-semibold flex flex-col items-end flex-shrink-0 ring-1 ring-inset ${m.chip}`}>
+                      <span className="flex items-center gap-1"><span className={`w-1.5 h-1.5 rounded-full ${m.dot} ${k === 'online' ? 'animate-pulse-dot' : ''}`} />{m.label}</span>
+                    </span>) })()}
                 </div>
-                {t.city && <p className="text-xs text-slate-400 flex items-center gap-1 mb-3"><MapPin size={10} />{[t.city, t.district].filter(Boolean).join(', ')}</p>}
+                {t.city && <p className="text-xs text-slate-400 flex items-center gap-1 mb-1"><MapPin size={10} />{[t.city, t.district].filter(Boolean).join(', ')}</p>}
+                {t.user_id && <p className="text-[11px] text-slate-400 mb-3">{st(t) === 'online' ? 'Using HT Jobs now' : st(t) === 'loggedin' ? `Logged in · last seen ${ago(t.last_seen_at)}` : t.last_logout_at ? `Logged out ${ago(t.last_logout_at)}` : 'Not logged in yet'}</p>}
                 <div className="grid grid-cols-4 gap-2 mb-3 text-center">
                   {[['Pending', s.pending, 'text-amber-600'], ['Done', s.completed, 'text-emerald-600'], ['Today', s.done_today, 'text-brand-600'], ['Total', s.total, 'text-slate-600']].map(([l, v, c]) => (
                     <div key={l} className="bg-slate-50 rounded-lg p-2"><div className={`text-sm font-bold ${c}`}>{v || 0}</div><div className="text-[9px] text-slate-400 uppercase">{l}</div></div>

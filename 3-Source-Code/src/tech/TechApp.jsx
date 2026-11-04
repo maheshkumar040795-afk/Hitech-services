@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Phone, MapPin, MessageCircle, ChevronRight, X, CheckCircle2, XCircle, Clock, RefreshCw, LogOut,
-  User, Lock, Send, Search, RotateCcw, Pencil, KeyRound, Wifi, WifiOff, CalendarDays, ClipboardList, CalendarClock, Banknote, Smartphone, BellRing,
+  User, Lock, Send, Search, RotateCcw, Pencil, KeyRound, Wifi, WifiOff, CalendarDays, ClipboardList, CalendarClock, Banknote, Smartphone, BellRing, ShoppingBag,
 } from 'lucide-react'
 import { supabase, rpc, errMsg } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -12,6 +12,7 @@ import { addDays, todayIST, isTodayIST, fmtDate, fmtDayIST, fmtDateTime, fmtMone
 import Logo from '../components/Logo'
 import WelcomeModal from '../components/WelcomeModal'
 import { usePushAlerts } from './usePushAlerts'
+import { useTechPresence } from '../hooks/usePresence'
 import IOSInstallSheet from '../components/ui/IOSInstallSheet'
 
 const REASONS = [
@@ -56,24 +57,25 @@ function Sheet({ title, onClose, children, tall = false }) {
 function CompleteSheet({ job, onClose, onDone }) {
   const { toast } = useToast()
   const [amount, setAmount] = useState(job.status === 'COMPLETED' ? String(Number(job.cod_amount)) : '')
-  const [mode, setMode] = useState(job.payment_mode || '')   // CASH | ONLINE
+  const [mode, setMode] = useState(job.payment_mode || '')   // CASH | ONLINE | AMAZON
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const submit = async (e) => {
     e.preventDefault()
-    const v = parseFloat(amount)
-    if (amount === '' || isNaN(v) || v < 0) return toast('Enter the amount collected (0 if none)', 'error')
+    const amazon = mode === 'AMAZON'
+    const v = amazon ? 0 : parseFloat(amount)
+    if (!amazon && (amount === '' || isNaN(v) || v < 0)) return toast('Enter the amount collected (0 if none)', 'error')
     if (v > 0 && !mode) return toast('Select Cash or Online', 'error')
     setBusy(true)
     try {
       const args = { p_order: job.id, p_status: 'COMPLETED', p_amount: v, p_note: note || null }
-      try { await rpc('tech_update_job', { ...args, p_payment_mode: v > 0 ? mode : null }) }
+      try { await rpc('tech_update_job', { ...args, p_payment_mode: amazon ? 'AMAZON' : v > 0 ? mode : null }) }
       catch (err) {   // server not updated yet → save without the payment mode
         if (/p_payment_mode|schema cache|Could not find the function/i.test(err?.message || '')) await rpc('tech_update_job', args)
         else throw err
       }
       navigator.vibrate?.(60)
-      toast(`Job completed · ${fmtMoney(v)}${v > 0 ? ` ${mode === 'ONLINE' ? 'online' : 'cash'}` : ''}`, 'success')
+      toast(amazon ? 'Job completed · paid on Amazon' : `Job completed · ${fmtMoney(v)}${v > 0 ? ` ${mode === 'ONLINE' ? 'online' : 'cash'}` : ''}`, 'success')
       onDone()
     } catch (err) { toast(errMsg(err), 'error') } finally { setBusy(false) }
   }
@@ -86,7 +88,7 @@ function CompleteSheet({ job, onClose, onDone }) {
           <div className="flex items-center rounded-2xl border-2 border-slate-200 focus-within:border-emerald-500 overflow-hidden">
             <span className="pl-4 text-2xl font-bold text-slate-400">₹</span>
             <input autoFocus type="number" inputMode="decimal" min="0" step="0.01" placeholder="0"
-              className="flex-1 py-4 px-3 text-3xl font-bold outline-none bg-transparent" value={amount} onChange={(e) => setAmount(e.target.value)} />
+              disabled={mode === 'AMAZON'} className="flex-1 py-4 px-3 text-3xl font-bold outline-none bg-transparent disabled:text-slate-300" value={amount} onChange={(e) => setAmount(e.target.value)} />
           </div>
           <div className="flex gap-2 mt-2">
             <button type="button" onClick={() => { setAmount('0'); setMode('') }} className="px-3 py-1.5 rounded-full bg-slate-100 text-xs font-semibold text-slate-600 active:bg-slate-200">No payment (₹0)</button>
@@ -94,15 +96,18 @@ function CompleteSheet({ job, onClose, onDone }) {
         </div>
         <div>
           <label className="block text-sm font-semibold text-slate-700 mb-2">Payment received by</label>
-          <div className="grid grid-cols-2 gap-2">
-            {[['CASH', 'Cash', Banknote, 'border-emerald-500 bg-emerald-50 text-emerald-700'], ['ONLINE', 'Online / UPI', Smartphone, 'border-violet-500 bg-violet-50 text-violet-700']].map(([k, l, Icon, on]) => (
-              <button key={k} type="button" onClick={() => setMode(k)} disabled={parseFloat(amount) === 0}
-                className={`py-4 rounded-2xl border-2 flex flex-col items-center gap-1 text-base font-bold transition disabled:opacity-40 ${mode === k ? on : 'border-slate-200 text-slate-600 active:bg-slate-50'}`}>
-                <Icon size={24} /> {l}
+          <div className="grid grid-cols-3 gap-2">
+            {[['CASH', 'Cash', Banknote, 'border-emerald-500 bg-emerald-50 text-emerald-700'], ['ONLINE', 'Online / UPI', Smartphone, 'border-violet-500 bg-violet-50 text-violet-700'],
+              ['AMAZON', 'Paid on Amazon', ShoppingBag, 'border-amber-500 bg-amber-50 text-amber-800']].map(([k, l, Icon, on]) => (
+              <button key={k} type="button" disabled={k !== 'AMAZON' && parseFloat(amount) === 0 && mode !== 'AMAZON'}
+                onClick={() => { if (k === 'AMAZON') setAmount('0'); else if (mode === 'AMAZON') setAmount(''); setMode(k) }}
+                className={`py-3.5 px-1 rounded-2xl border-2 flex flex-col items-center gap-1 text-sm font-bold leading-tight text-center transition disabled:opacity-40 ${mode === k ? on : 'border-slate-200 text-slate-600 active:bg-slate-50'}`}>
+                <Icon size={22} /> {l}
               </button>
             ))}
           </div>
-          {parseFloat(amount) > 0 && !mode && <p className="text-xs text-amber-600 mt-1.5">Select Cash or Online</p>}
+          {mode === 'AMAZON' ? <p className="text-xs text-amber-700 mt-1.5">Customer already paid on Amazon — nothing collected (₹0).</p>
+            : parseFloat(amount) > 0 && !mode && <p className="text-xs text-amber-600 mt-1.5">Select Cash or Online</p>}
         </div>
         <div>
           <label className="block text-sm font-semibold text-slate-700 mb-2">Note <span className="font-normal text-slate-400">(optional)</span></label>
@@ -218,7 +223,7 @@ function JobDetail({ job, onClose, refresh }) {
               ['Order date', fmtDate(job.order_date, { day: 'numeric', month: 'short', year: 'numeric' })],
               ...(job.rescheduled_date ? [['Rescheduled to', fmtDate(job.rescheduled_date, { day: 'numeric', month: 'short', year: 'numeric' })]] : []),
               ...(!isOpen(job) ? [[job.status === 'COMPLETED' ? 'Completed on' : 'Closed', fmtDateTime(job.closed_at)]] : []),
-              ...(job.status === 'COMPLETED' ? [['Amount collected', `${fmtMoney(job.cod_amount)}${job.payment_mode ? ` · ${job.payment_mode === 'ONLINE' ? 'Online' : 'Cash'}` : ''}`]] : []),
+              ...(job.status === 'COMPLETED' ? [['Amount collected', (job.payment_mode === 'AMAZON' ? 'Paid on Amazon' : `${fmtMoney(job.cod_amount)}${job.payment_mode ? ` · ${job.payment_mode === 'ONLINE' ? 'Online' : 'Cash'}` : ''}`)]] : []),
             ].map(([l, v]) => (
               <div key={l} className="flex gap-3 px-4 py-3"><span className="text-xs text-slate-400 w-24 flex-shrink-0 pt-0.5">{l}</span><span className="text-[15px] text-slate-800 font-medium break-words">{v}</span></div>
             ))}
@@ -296,7 +301,7 @@ function JobCard({ job, onOpen, isNew }) {
             <p className="text-[17px] font-bold text-slate-900 truncate">{job.customer_name}</p>
             <p className="text-sm text-slate-600 truncate">{[job.service, job.brand].filter(Boolean).join(' · ')}</p>
             <p className="text-sm text-slate-500 truncate mt-0.5"><MapPin size={12} className="inline -mt-0.5" /> {[job.location, job.pin_code].filter(Boolean).join(' · ') || '—'}</p>
-            {job.status === 'COMPLETED' && <p className="text-sm font-bold text-emerald-700 mt-1">{fmtMoney(job.cod_amount)} collected{job.payment_mode ? ` · ${job.payment_mode === 'ONLINE' ? 'Online' : 'Cash'}` : ''} <span className="font-medium text-slate-400">· {fmtDayIST(job.closed_at, { day: 'numeric', month: 'short' })}</span></p>}
+            {job.status === 'COMPLETED' && <p className="text-sm font-bold text-emerald-700 mt-1">{job.payment_mode === 'AMAZON' ? 'Paid on Amazon' : <>{fmtMoney(job.cod_amount)} collected{job.payment_mode ? ` · ${job.payment_mode === 'ONLINE' ? 'Online' : 'Cash'}` : ''}</>} <span className="font-medium text-slate-400">· {fmtDayIST(job.closed_at, { day: 'numeric', month: 'short' })}</span></p>}
           </div>
           <ChevronRight size={20} className="text-slate-300 mt-2 flex-shrink-0" />
         </div>
@@ -399,6 +404,7 @@ export default function TechApp() {
 
   const refresh = useCallback(() => qc.invalidateQueries({ queryKey: ['my-jobs'] }), [qc])
   const push = usePushAlerts(technician, user)
+  useTechPresence(technician)   // office sees this technician as Online while the app is open
   const [iosHelp, setIosHelp] = useState(false)
   // A notification arriving while the app is open → refresh the list
   useEffect(() => {

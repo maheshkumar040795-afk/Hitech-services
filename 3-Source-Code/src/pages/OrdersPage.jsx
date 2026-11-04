@@ -103,7 +103,7 @@ function OrderFormModal({ order, techs, onClose, onSaved }) {
     const base = { order_id: '', order_date: todayIST(), customer_name: '', phone_no: '', service: '', brand: '', location: '', address: '', pin_code: '', location_url: '', technician_id: '' }
     if (!order) return base
     const o = Object.fromEntries(ORDER_FIELDS.map((k) => [k, order[k] ?? '']))
-    return { ...base, ...o, cod_amount: order.cod_amount ?? 0, payment_mode: order.payment_mode || '' }
+    return { ...base, ...o, cod_amount: order.cod_amount ?? 0, payment_mode: order.payment_mode || '', region: order.region || '' }
   })
   const [busy, setBusy] = useState(false)
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }))
@@ -113,9 +113,10 @@ function OrderFormModal({ order, techs, onClose, onSaved }) {
     const row = Object.fromEntries(ORDER_FIELDS.map((k) => [k, typeof f[k] === 'string' ? f[k].trim() || null : f[k]]))
     if (row.location_url && !isUrl(row.location_url)) return toast('Google location must be a link starting with https://', 'error')
     if (editing && !row.location_url && !order.location_url) delete row.location_url   // older database without the column
+    if (editing && 'region' in order && f.region) row.region = f.region
     if (completed) {
       row.cod_amount = Math.max(0, parseFloat(f.cod_amount) || 0)
-      row.payment_mode = row.cod_amount > 0 ? (f.payment_mode || null) : null
+      row.payment_mode = f.payment_mode === 'AMAZON' ? 'AMAZON' : row.cod_amount > 0 ? (f.payment_mode || null) : null
     }
     setBusy(true)
     const { error } = editing
@@ -141,6 +142,12 @@ function OrderFormModal({ order, techs, onClose, onSaved }) {
           <div className="relative"><MapPin size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input className="input pl-9" inputMode="url" placeholder="https://maps.app.goo.gl/…" value={f.location_url} onChange={set('location_url')} /></div>
         </Field></div>
+        {editing && 'region' in order && (
+          <div className="sm:col-span-2"><Field label="Rate region" hint="Decides the technician rate in Rate Config. Set from the pin code (600xxx = Chennai) unless you change it.">
+            <select className="input" value={f.region} onChange={set('region')}>
+              <option value="CHENNAI">Within Chennai</option><option value="OUTSIDE">Outside Chennai</option>
+            </select></Field></div>
+        )}
         <div className="sm:col-span-2"><Field label="Assign Technician">
           <TechPicker techs={techs} value={f.technician_id || ''} onChange={(v) => setF((p) => ({ ...p, technician_id: v }))}
             extra={[{ value: '', label: '— Unassigned —' }]} placeholder="— Unassigned —" className="w-full" /></Field></div>
@@ -148,7 +155,7 @@ function OrderFormModal({ order, techs, onClose, onSaved }) {
           <Field label="Amount collected ₹"><input type="number" min="0" step="0.01" className="input" value={f.cod_amount} onChange={set('cod_amount')} /></Field>
           <Field label="Payment">
             <select className="input" value={f.payment_mode} onChange={set('payment_mode')}>
-              <option value="">—</option><option value="CASH">Cash</option><option value="ONLINE">Online</option>
+              <option value="">—</option><option value="CASH">Cash</option><option value="ONLINE">Online</option><option value="AMAZON">Paid on Amazon</option>
             </select></Field>
         </>}
         <div className="sm:col-span-2 flex justify-end gap-2 pt-2">
@@ -377,11 +384,11 @@ export default function OrdersPage() {
                       <input key={`${o.id}-${o.cod_amount}`} type="number" min="0" step="0.01" defaultValue={Number(o.cod_amount || 0)}
                         className="w-20 text-xs px-2 py-1 border border-slate-200 rounded-lg text-right"
                         onBlur={(e) => { const v = Math.max(0, parseFloat(e.target.value) || 0); if (v !== Number(o.cod_amount || 0)) update([o.id], { cod_amount: v }, 'Amount saved') }} />
-                      {o.status === 'COMPLETED' && Number(o.cod_amount) > 0 && (
+                      {o.status === 'COMPLETED' && (Number(o.cod_amount) > 0 || o.payment_mode === 'AMAZON') && (
                         <select value={o.payment_mode || ''} disabled={busy} title="Cash or Online"
                           onChange={(e) => update([o.id], { payment_mode: e.target.value || null }, `Payment: ${PAYMENT[e.target.value] || 'not set'}`)}
-                          className={`block mt-1 w-20 text-[10px] font-semibold px-1.5 py-0.5 rounded-md border ${o.payment_mode === 'ONLINE' ? 'bg-violet-50 text-violet-700 border-violet-200' : o.payment_mode === 'CASH' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
-                          <option value="">Mode?</option><option value="CASH">Cash</option><option value="ONLINE">Online</option>
+                          className={`block mt-1 w-20 text-[10px] font-semibold px-1.5 py-0.5 rounded-md border ${o.payment_mode === 'ONLINE' ? 'bg-violet-50 text-violet-700 border-violet-200' : o.payment_mode === 'AMAZON' ? 'bg-amber-50 text-amber-800 border-amber-300' : o.payment_mode === 'CASH' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                          <option value="">Mode?</option><option value="CASH">Cash</option><option value="ONLINE">Online</option><option value="AMAZON">Amazon</option>
                         </select>
                       )}
                     </td>

@@ -55,13 +55,15 @@ export function AuthProvider({ children }) {
     const { error } = await supabase.auth.signInWithPassword({ email: loginToEmail(loginId), password })
     if (error) throw new Error(errMsg(error))
     markWelcome()
+    try { sessionStorage.setItem('ht_login_event', '1') } catch { /* ignore */ }
   }, [])
 
   const logout = useCallback(async () => {
+    if (user?.role === 'TECHNICIAN') await supabase.rpc('tech_activity', { p_event: 'logout' }).then(() => {}, () => {})
     await supabase.auth.signOut()
     setUser(null)
     setTechnician(null)
-  }, [])
+  }, [user?.role])
 
   const value = {
     session, user, technician, loading: loading || session === undefined, authError,

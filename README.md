@@ -192,3 +192,12 @@ Only **ORDER ID** and **CUSTOMER NAME** are required. Download **Template** on t
 1. SQL Editor → run `2-Supabase-Setup/update-2026-10-job-alerts.sql`.
 2. Edge Functions → Deploy new function → name **`notify-assign`** → paste `2-Supabase-Setup/functions/notify-assign/index.ts` → turn **off** "Verify JWT" → Deploy.
 3. Edge Functions → Secrets → add `VAPID_PUBLIC_KEY` (same as `WEB_PUSH_PUBLIC_KEY` in config.js), `VAPID_PRIVATE_KEY` (kept privately — never put it in this repo), `VAPID_SUBJECT` = `mailto:you@yourdomain`.
+
+## Update — Nov 2026: technician status, Rate Config, Technician Payout
+
+**Run once:** Supabase → SQL Editor → paste `2-Supabase-Setup/update-2026-11-status-rates-payout.sql` → **Run**.
+
+- **Technician status** (Technicians page + Dashboard): Online now (HT Jobs open, live), Logged in (last seen …), Logged out, App not set up, Blocked — with counts and an "Online now" filter.
+- **Rate Config** (admin menu): technician rate per service, tabs **Within Chennai** (pin 600xxx or no pin) / **Outside Chennai**. Shows services in orders that have no rate. "Apply rates to this month's completed jobs" re-applies after edits. Edit order → *Rate region* to override.
+- **Technician Payout** (admin menu): completed jobs by day/range → per technician: earned (rates) − cash collected (− online, if online payments reach the technician; switch on the page) = **net pay**. "Paid on Amazon" jobs: nothing collected, full rate paid. Expand a technician to see each job; Export to Excel.
+- **HT Jobs**: Mark Completed now has **Cash / Online / Paid on Amazon**. The rate is saved on the job at completion, so later rate changes don't alter past payouts.

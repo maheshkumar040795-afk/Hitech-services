@@ -3,13 +3,14 @@ import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   LayoutDashboard, ClipboardList, Wrench, FileBarChart2, History, Users, Settings,
-  LogOut, Contact2 as IdCard, ChevronLeft, ChevronRight, Wifi, WifiOff, Receipt, Menu, X,
+  LogOut, Contact2 as IdCard, Wallet, BadgeIndianRupee, ChevronLeft, ChevronRight, Wifi, WifiOff, Receipt, Menu, X,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { useOrdersRealtime } from '../../hooks/useRealtime'
 import { usePinResets } from '../../hooks/useData'
 import WelcomeModal from '../WelcomeModal'
+import { OnlineTechsContext, useOnlineTechsLive } from '../../hooks/usePresence'
 import { ShieldCheck, CalendarDays, KeyRound as KeyIcon } from 'lucide-react'
 import Logo from '../Logo'
 
@@ -18,6 +19,8 @@ const NAV_ITEMS = [
   { to: '/orders',      label: 'Orders',      icon: ClipboardList },
   { to: '/technicians', label: 'Technicians', icon: Wrench },
   { to: '/billing',     label: 'Billing',     icon: Receipt },
+  { to: '/payouts',     label: 'Technician Payout', icon: Wallet,  adminOnly: true },
+  { to: '/rates',       label: 'Rate Config', icon: BadgeIndianRupee, adminOnly: true },
   { to: '/reports',     label: 'Reports',     icon: FileBarChart2, adminOnly: true },
   { to: '/audit',       label: 'Audit Log',   icon: History,       adminOnly: true },
   { to: '/users',       label: 'Users',       icon: Users,         adminOnly: true },
@@ -64,6 +67,7 @@ export default function AppShell() {
     seenResets.current = ids
   }, [pinResets, toast])
 
+  const onlineTechs = useOnlineTechsLive(true)   // who has HT Jobs open right now
   const handleLogout = async () => { await logout(); navigate('/login') }
   const items = NAV_ITEMS.filter((i) => !i.adminOnly || isAdmin)
 
@@ -156,7 +160,9 @@ export default function AppShell() {
           </div>
         </header>
         <main className="flex-1 overflow-y-auto p-4 lg:p-6">
-          <Suspense fallback={<div className="text-sm text-slate-400 p-6">Loading…</div>}><div key={location.pathname} className="page-enter-wrap animate-fade-in"><Outlet /></div></Suspense>
+          <OnlineTechsContext.Provider value={onlineTechs}>
+            <Suspense fallback={<div className="text-sm text-slate-400 p-6">Loading…</div>}><div key={location.pathname} className="page-enter-wrap animate-fade-in"><Outlet /></div></Suspense>
+          </OnlineTechsContext.Provider>
         </main>
       </div>
     </div>

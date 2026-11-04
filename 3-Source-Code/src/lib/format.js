@@ -48,7 +48,7 @@ export const STATUS = {
 }
 /** Statuses that still need a visit */
 export const OPEN_STATUSES = ['PENDING', 'RESCHEDULED']
-export const PAYMENT = { CASH: 'Cash', ONLINE: 'Online' }
+export const PAYMENT = { CASH: 'Cash', ONLINE: 'Online', AMAZON: 'Paid on Amazon' }
 
 /** Google Maps link saved on the order wins; otherwise search by address */
 export const isUrl = (u) => /^https?:\/\/\S+$/i.test(String(u || '').trim())

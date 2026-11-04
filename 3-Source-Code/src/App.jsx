@@ -19,6 +19,8 @@ const AuditPage = lazy(() => import('./pages/AuditPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const BillingPage = lazy(() => import('./pages/BillingPage'))
 const IdCardsPage = lazy(() => import('./pages/IdCardsPage'))
+const RatesPage = lazy(() => import('./pages/RatesPage'))
+const PayoutPage = lazy(() => import('./pages/PayoutPage'))
 
 /** true when running from …/tech/ (the HT Jobs app) */
 const TECH_ENTRY = typeof window !== 'undefined' && !!window.HT_TECH_ENTRY
@@ -101,6 +103,8 @@ function AppRoutes() {
         <Route path="audit" element={<OfficeRoute adminOnly><AuditPage /></OfficeRoute>} />
         <Route path="users" element={<OfficeRoute adminOnly><UsersPage /></OfficeRoute>} />
         <Route path="id-cards" element={<OfficeRoute adminOnly><IdCardsPage /></OfficeRoute>} />
+        <Route path="rates" element={<OfficeRoute adminOnly><RatesPage /></OfficeRoute>} />
+        <Route path="payouts" element={<OfficeRoute adminOnly><PayoutPage /></OfficeRoute>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
