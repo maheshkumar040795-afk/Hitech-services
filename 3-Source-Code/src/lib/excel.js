@@ -3,11 +3,12 @@ import * as XLSX from 'xlsx'
 // Header name (any case / spacing) → field. First match wins.
 const FIELD_ALIASES = {
   order_date:    ['DATE', 'ORDERDATE'],
-  order_id:      ['ORDERID', 'ORDERNO', 'ORDERNUMBER'],
+  order_id:      ['SERVICEORDERID', 'SERVICEORDERNO', 'ORDERID', 'ORDERNO', 'ORDERNUMBER'],
   customer_name: ['CUSTOMERNAME', 'CUSTOMER', 'NAME'],
   phone_no:      ['PHONENO', 'PHONE', 'MOBILE', 'MOBILENO', 'CONTACT', 'PHONENUMBER'],
   service:       ['SERVICE', 'PRODUCTNAME', 'PRODUCT'],
   brand:         ['BRAND'],
+  product_type:  ['PRODUCTTYPE', 'CATEGORY', 'APPLIANCE', 'APPLIANCETYPE'],
   location:      ['LOCATION', 'CITY', 'AREA'],
   address:       ['ADDRESS', 'FULLADDRESS'],
   location_url:  ['LOCATIONURL', 'GOOGLELOCATION', 'GOOGLELOCATIONURL', 'GOOGLEMAP', 'GOOGLEMAPS', 'GOOGLEMAPLINK', 'MAPLINK', 'MAPURL', 'MAP', 'LOCATIONLINK'],
@@ -58,7 +59,7 @@ export async function parseOrdersFile(file) {
     if (h) colFor[field] = h
   }
   if (!colFor.order_id || !colFor.customer_name) {
-    throw new Error('Could not find "ORDER ID" and "CUSTOMER NAME" columns. Download the template to see the format.')
+    throw new Error('Could not find the "SERVICE_ORDER_ID" and "CUSTOMER NAME" columns. Download the template to see the format.')
   }
 
   const rows = raw
@@ -88,14 +89,18 @@ export function downloadXlsx(filename, sheets) {
   XLSX.writeFile(wb, filename)
 }
 
+/** Order sheet columns — same order as the Hi-Tech model sheet (upload, template and export) */
+export const ORDER_SHEET_COLUMNS = ['DATE', 'SERVICE_ORDER_ID', 'CUSTOMER NAME', 'PHONE NUMBER', 'SERVICE', 'BRAND', 'PRODUCT_TYPE', 'LOCATION', 'PIN CODE', 'TECHNICIAN', 'STATUS']
+
 export function downloadOrdersTemplate() {
   const wb = XLSX.utils.book_new()
   const ws = XLSX.utils.aoa_to_sheet([
-    ['DATE', 'ORDER ID', 'CUSTOMER NAME', 'PHONE NO', 'SERVICE', 'BRAND', 'LOCATION', 'ADDRESS', 'PIN CODE', 'LOCATION URL', 'TECHNICIAN', 'STATUS', 'COMMENTS'],
-    ['10/6/2026', '406-0764915-3871521', 'Karthiga', '7708240150', 'AC Installation Service', 'Voltas', 'Kanchipuram', '12, Gandhi Road', '631502', 'https://maps.app.goo.gl/xxxxx', 'Abinesh', 'Pending', 'Tomorrow Appointment'],
-    ['10/6/2026', '406-6864501-1397130', 'Senthil', '9840067251', 'AC Installation Service', 'Godrej', 'Besant Nagar', '', '600090', '', '', 'Pending', ''],
+    ORDER_SHEET_COLUMNS,
+    ['11/2/2026', '404-2330510-9169150', 'Suresh', '9585986893', 'TV Installation Service (PP)', 'PHILIPS', 'TELEVISION', 'TIRUNELVELI', '627102', 'Azar', 'NOT_SERVICED'],
+    ['11/2/2026', '403-5405966-8456307', 'Sathiyaraj', '9698787620', 'TV Installation Service (PP)', 'PHILIPS', 'TELEVISION', 'ARIYALUR', '612903', 'Karthikeyan J', 'COMPLETED'],
+    ['11/2/2026', '171-4273629-9033140', 'Gokulsendrayan', '6380241141', 'TV Installation Service', 'Visio World', 'TELEVISION', 'ERODE', '638504', 'Kavinesh', 'Physically completed'],
   ])
-  ws['!cols'] = [12, 24, 18, 14, 28, 12, 16, 28, 10, 30, 14, 10, 22].map((wch) => ({ wch }))
+  ws['!cols'] = [12, 22, 18, 14, 30, 14, 14, 16, 10, 16, 20].map((wch) => ({ wch }))
   XLSX.utils.book_append_sheet(wb, ws, 'Orders')
   XLSX.writeFile(wb, 'hitech-orders-template.xlsx')
 }

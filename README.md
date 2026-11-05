@@ -201,3 +201,11 @@ Only **ORDER ID** and **CUSTOMER NAME** are required. Download **Template** on t
 - **Rate Config** (admin menu): technician rate per service, tabs **Within Chennai** (pin 600xxx or no pin) / **Outside Chennai**. Shows services in orders that have no rate. "Apply rates to this month's completed jobs" re-applies after edits. Edit order → *Rate region* to override.
 - **Technician Payout** (admin menu): completed jobs by day/range → per technician: earned (rates) − cash collected (− online, if online payments reach the technician; switch on the page) = **net pay**. "Paid on Amazon" jobs: nothing collected, full rate paid. Expand a technician to see each job; Export to Excel.
 - **HT Jobs**: Mark Completed now has **Cash / Online / Paid on Amazon**. The rate is saved on the job at completion, so later rate changes don't alter past payouts.
+
+## Update — Nov 2026 (2): order sheet in the Hi-Tech model format
+
+**Run once:** Supabase → SQL Editor → paste `2-Supabase-Setup/update-2026-11-order-sheet-format.sql` → **Run**.
+
+- **Template** (Orders → Template) now has the model columns: DATE, SERVICE_ORDER_ID, CUSTOMER NAME, PHONE NUMBER, SERVICE, BRAND, PRODUCT_TYPE, LOCATION, PIN CODE, TECHNICIAN, STATUS.
+- **Orders table, upload preview and Export** use the same column order. PRODUCT_TYPE is saved and shown (also in the order drawer and HT Jobs).
+- **STATUS from the sheet** is kept as written (shown as "Sheet: …" under the status) and mapped: COMPLETED / Physically completed → Completed, NOT_SERVICED → Pending, CANCELLED / REJECTED → Rejected.

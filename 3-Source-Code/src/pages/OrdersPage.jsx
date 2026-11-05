@@ -53,11 +53,12 @@ function UploadModal({ file, parsed, onClose, onDone }) {
           </div>
           <div className="overflow-x-auto border border-slate-200 rounded-xl mb-4">
             <table className="w-full text-[11px]">
-              <thead className="bg-slate-50"><tr>{['Date', 'Order ID', 'Customer', 'Location', 'Technician', 'Status'].map((h) => <th key={h} className="px-2 py-1.5 text-left text-slate-500">{h}</th>)}</tr></thead>
+              <thead className="bg-slate-50"><tr>{['DATE', 'SERVICE ORDER ID', 'CUSTOMER NAME', 'SERVICE', 'PRODUCT TYPE', 'LOCATION', 'TECHNICIAN', 'STATUS'].map((h) => <th key={h} className="px-2 py-1.5 text-left text-slate-500 whitespace-nowrap">{h}</th>)}</tr></thead>
               <tbody>{preview.map((r, i) => (
                 <tr key={i} className="border-t border-slate-100">
                   <td className="px-2 py-1.5">{r.order_date ? fmtDate(r.order_date) : <span className="text-amber-600">today</span>}</td>
                   <td className="px-2 py-1.5 font-mono">{r.order_id}</td><td className="px-2 py-1.5">{r.customer_name}</td>
+                  <td className="px-2 py-1.5">{r.service}</td><td className="px-2 py-1.5">{r.product_type || '—'}</td>
                   <td className="px-2 py-1.5">{r.location}</td><td className="px-2 py-1.5">{r.technician || '—'}</td><td className="px-2 py-1.5">{r.status || 'Pending'}</td>
                 </tr>))}
               </tbody>
@@ -93,14 +94,14 @@ function UploadModal({ file, parsed, onClose, onDone }) {
   )
 }
 
-const ORDER_FIELDS = ['order_id', 'order_date', 'customer_name', 'phone_no', 'service', 'brand', 'location', 'address', 'pin_code', 'location_url', 'technician_id']
+const ORDER_FIELDS = ['order_id', 'order_date', 'customer_name', 'phone_no', 'service', 'brand', 'product_type', 'location', 'address', 'pin_code', 'location_url', 'technician_id']
 
 /** Add a new order, or edit an existing one to fill in missed details */
 function OrderFormModal({ order, techs, onClose, onSaved }) {
   const { toast } = useToast()
   const editing = !!order
   const [f, setF] = useState(() => {
-    const base = { order_id: '', order_date: todayIST(), customer_name: '', phone_no: '', service: '', brand: '', location: '', address: '', pin_code: '', location_url: '', technician_id: '' }
+    const base = { order_id: '', order_date: todayIST(), customer_name: '', phone_no: '', service: '', brand: '', product_type: '', location: '', address: '', pin_code: '', location_url: '', technician_id: '' }
     if (!order) return base
     const o = Object.fromEntries(ORDER_FIELDS.map((k) => [k, order[k] ?? '']))
     return { ...base, ...o, cod_amount: order.cod_amount ?? 0, payment_mode: order.payment_mode || '', region: order.region || '' }
@@ -113,6 +114,7 @@ function OrderFormModal({ order, techs, onClose, onSaved }) {
     const row = Object.fromEntries(ORDER_FIELDS.map((k) => [k, typeof f[k] === 'string' ? f[k].trim() || null : f[k]]))
     if (row.location_url && !isUrl(row.location_url)) return toast('Google location must be a link starting with https://', 'error')
     if (editing && !row.location_url && !order.location_url) delete row.location_url   // older database without the column
+    if (!row.product_type && !(editing && 'product_type' in order)) delete row.product_type
     if (editing && 'region' in order && f.region) row.region = f.region
     if (completed) {
       row.cod_amount = Math.max(0, parseFloat(f.cod_amount) || 0)
@@ -135,6 +137,7 @@ function OrderFormModal({ order, techs, onClose, onSaved }) {
         <Field label="Phone"><input className="input" inputMode="tel" value={f.phone_no} onChange={set('phone_no')} /></Field>
         <Field label="Service"><input className="input" value={f.service} onChange={set('service')} placeholder="AC Installation Service" /></Field>
         <Field label="Brand"><input className="input" value={f.brand} onChange={set('brand')} /></Field>
+        <Field label="Product Type"><input className="input" value={f.product_type || ''} onChange={set('product_type')} placeholder="TELEVISION" /></Field>
         <Field label="Location / Area"><input className="input" value={f.location} onChange={set('location')} /></Field>
         <Field label="Pin Code"><input className="input" inputMode="numeric" value={f.pin_code} onChange={set('pin_code')} /></Field>
         <div className="sm:col-span-2"><Field label="Full Address"><input className="input" value={f.address} onChange={set('address')} /></Field></div>
@@ -252,9 +255,11 @@ export default function OrdersPage() {
     try {
       const rows = await fetchAll(() => applyFilters(supabase.from('orders').select(SELECT), f).order('order_date', { ascending: false }))
       downloadXlsx(`hitech-orders-${todayIST()}.xlsx`, [{ name: 'Orders', rows: rows.map((o) => ({
-        'Order Date': fmtDate(o.order_date), 'Rescheduled To': o.rescheduled_date ? fmtDate(o.rescheduled_date) : '', 'Order ID': o.order_id, 'Customer Name': o.customer_name, 'Phone No': o.phone_no || '',
-        Service: o.service || '', Brand: o.brand || '', Location: o.location || '', Address: o.address || '', 'Pin Code': o.pin_code || '', 'Google Location': o.location_url || '',
-        'Technician ID': techs.find((t) => t.id === o.technician_id)?.tech_code || '', Technician: o.technician?.name || 'Unassigned', Status: STATUS[o.status]?.label || o.status,
+        DATE: fmtDate(o.order_date), SERVICE_ORDER_ID: o.order_id, 'CUSTOMER NAME': o.customer_name, 'PHONE NUMBER': o.phone_no || '',
+        SERVICE: o.service || '', BRAND: o.brand || '', PRODUCT_TYPE: o.product_type || '', LOCATION: o.location || '', 'PIN CODE': o.pin_code || '',
+        TECHNICIAN: o.technician?.name || '', STATUS: STATUS[o.status]?.label || o.status,
+        'Sheet Status': o.source_status || '', 'Technician ID': techs.find((t) => t.id === o.technician_id)?.tech_code || '',
+        'Rescheduled To': o.rescheduled_date ? fmtDate(o.rescheduled_date) : '', Address: o.address || '', 'Google Location': o.location_url || '',
         'Completed On': o.status === 'COMPLETED' && o.closed_at ? fmtDayIST(o.closed_at) : '', 'Not Done On': o.status === 'REJECTED' && o.closed_at ? fmtDayIST(o.closed_at) : '',
         Amount: Number(o.cod_amount || 0), Payment: PAYMENT[o.payment_mode] || '', Comments: o.comments || '',
         'Modified By': o.modifier?.name || '', 'Modified At': o.modified_at ? fmtDateTime(o.modified_at) : '',
@@ -337,16 +342,16 @@ export default function OrdersPage() {
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
                 <th className="px-3 py-3 w-10"><input type="checkbox" checked={allSel} onChange={toggleAll} /></th>
-                {['Date', 'Order ID', 'Customer', 'Phone', 'Service', 'Location', 'Pin', 'Technician', 'Status', 'Completed', 'Amount ₹', 'Comment', 'Modified', ''].map((h) => (
+                {['Date', 'Service Order ID', 'Customer Name', 'Phone Number', 'Service', 'Brand', 'Product Type', 'Location', 'Pin Code', 'Technician', 'Status', 'Completed', 'Amount ₹', 'Comment', 'Modified', ''].map((h) => (
                   <th key={h} className="px-3 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {isLoading ? Array.from({ length: 6 }).map((_, i) => (
-                <tr key={i} className="border-b border-slate-50"><td colSpan={15} className="px-3 py-3"><div className="h-4 bg-slate-100 animate-pulse rounded" /></td></tr>
+                <tr key={i} className="border-b border-slate-50"><td colSpan={17} className="px-3 py-3"><div className="h-4 bg-slate-100 animate-pulse rounded" /></td></tr>
               )) : orders.length === 0 ? (
-                <tr><td colSpan={15} className="px-3 py-12 text-center text-sm text-slate-400">No orders found</td></tr>
+                <tr><td colSpan={17} className="px-3 py-12 text-center text-sm text-slate-400">No orders found</td></tr>
               ) : orders.map((o) => {
                 const sc = STATUS[o.status] || STATUS.PENDING
                 return (
@@ -357,7 +362,9 @@ export default function OrdersPage() {
                     <td className="px-3 py-2 whitespace-nowrap"><button onClick={() => setDetailId(o.id)} className="font-mono text-xs text-brand-600 font-semibold hover:underline">{o.order_id}</button></td>
                     <td className="px-3 py-2 text-xs font-semibold text-slate-800 whitespace-nowrap">{o.customer_name}</td>
                     <td className="px-3 py-2 font-mono text-[11px] text-slate-500">{o.phone_no}</td>
-                    <td className="px-3 py-2 max-w-[150px]"><span className="text-xs text-slate-600 line-clamp-2">{o.service}{o.brand ? ` · ${o.brand}` : ''}</span></td>
+                    <td className="px-3 py-2 max-w-[170px]"><span className="text-xs text-slate-600 line-clamp-2">{o.service}</span></td>
+                    <td className="px-3 py-2 text-xs text-slate-600 whitespace-nowrap">{o.brand}</td>
+                    <td className="px-3 py-2 text-[11px] text-slate-500 whitespace-nowrap">{o.product_type}</td>
                     <td className="px-3 py-2 text-xs text-slate-600">{o.location}{isUrl(o.location_url) && <a href={o.location_url} target="_blank" rel="noreferrer" title="Open Google location" className="ml-1 inline-flex align-middle text-emerald-600 hover:text-emerald-700"><MapPin size={12} /></a>}</td>
                     <td className="px-3 py-2 font-mono text-xs text-slate-400">{o.pin_code}</td>
                     <td className="px-3 py-2">
@@ -373,6 +380,7 @@ export default function OrdersPage() {
                         className={`text-[10px] font-semibold px-2 py-1 rounded-lg border ${sc.bg} ${sc.text} ${sc.border}`}>
                         <option value="PENDING">Pending</option><option value="RESCHEDULED">Rescheduled</option><option value="COMPLETED">Completed</option><option value="REJECTED">Rejected</option>
                       </select>
+                      {o.source_status && o.source_status.toUpperCase() !== o.status && <div className="text-[10px] text-slate-400 mt-0.5 whitespace-nowrap" title="STATUS in the uploaded sheet">Sheet: {o.source_status}</div>}
                       {o.status === 'RESCHEDULED' && <button onClick={() => setResched([o])} className="block mt-0.5 text-[10px] font-semibold text-sky-700 hover:underline whitespace-nowrap">to {fmtDate(o.rescheduled_date)} · change</button>}
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap text-[11px]">

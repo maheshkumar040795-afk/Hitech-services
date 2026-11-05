@@ -25,7 +25,8 @@ const REASONS = [
   'Site not ready',
 ]
 // Only what the phone shows (keeps mobile data and the free-plan download quota low)
-const JOB_FIELDS = 'id, order_id, order_date, rescheduled_date, customer_name, phone_no, service, brand, location, address, pin_code, location_url, status, comments, cod_amount, payment_mode, closed_at, assigned_at'
+const JOB_FIELDS_V2 = 'id, order_id, order_date, rescheduled_date, customer_name, phone_no, service, brand, location, address, pin_code, location_url, status, comments, cod_amount, payment_mode, closed_at, assigned_at'
+const JOB_FIELDS = JOB_FIELDS_V2 + ', product_type'
 const JOB_FIELDS_OLD = 'id, order_id, order_date, customer_name, phone_no, service, brand, location, address, pin_code, status, comments, cod_amount, closed_at, assigned_at'
 const HISTORY_SHORT = 3, HISTORY_LONG = 30   // days of Done / Not done jobs to download
 
@@ -217,6 +218,7 @@ function JobDetail({ job, onClose, refresh }) {
           <div className="rounded-2xl border border-slate-200 divide-y divide-slate-100">
             {[
               ['Service', [job.service, job.brand].filter(Boolean).join(' · ') || '—'],
+              ...(job.product_type ? [['Product type', job.product_type]] : []),
               ['Phone', job.phone_no || '—'],
               ['Address', [job.address, job.location].filter(Boolean).join(', ') || '—'],
               ['Pin code', job.pin_code || '—'],
@@ -380,7 +382,9 @@ export default function TechApp() {
         .or(`status.not.in.(COMPLETED,REJECTED),closed_at.gte."${since}"`)
         .order('order_date', { ascending: true })
       let { data, error } = await run(JOB_FIELDS)
-      if (error?.code === '42703') ({ data, error } = await run(JOB_FIELDS_OLD))   // database update not run yet
+      // a newer column missing = database update not run yet → fall back to older field lists
+      if (error?.code === '42703') ({ data, error } = await run(JOB_FIELDS_V2))
+      if (error?.code === '42703') ({ data, error } = await run(JOB_FIELDS_OLD))
       if (error) throw error
       return data
     },

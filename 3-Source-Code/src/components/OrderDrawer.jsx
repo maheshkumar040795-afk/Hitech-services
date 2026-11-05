@@ -79,7 +79,7 @@ export default function OrderDrawer({ orderId, onClose }) {
                 ['Order Date', fmtDate(o.order_date)], ['Rescheduled To', o.rescheduled_date ? fmtDate(o.rescheduled_date) : '—'],
                 ['Completed On', o.status === 'COMPLETED' && o.closed_at ? fmtDayIST(o.closed_at) : '—'], ['Customer', o.customer_name],
                 ['Phone', o.phone_no || '—'], ['Service', o.service || '—'],
-                ['Brand', o.brand || '—'], ['Pin Code', o.pin_code || '—'],
+                ['Brand', o.brand || '—'], ['Product Type', o.product_type || '—'], ['Pin Code', o.pin_code || '—'],
                 ['Location', o.location || '—'], ['Address', o.address || '—'],
                 ['Technician', techLabel(o.technician) || 'Unassigned'], ['Amount Collected', `${fmtMoney(o.cod_amount)}${o.payment_mode ? ` · ${PAYMENT[o.payment_mode]}` : ''}`],
                 ['Assigned By', o.assigner?.name ? `${o.assigner.name}${o.assigned_at ? ' · ' + fmtDateTime(o.assigned_at) : ''}` : '—'],
