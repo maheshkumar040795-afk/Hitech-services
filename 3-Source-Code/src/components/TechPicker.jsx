@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronDown, Search, X, Check } from 'lucide-react'
+import { ChevronDown, Search, X, Check, MapPin } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { supabase } from '../lib/supabase'
 import { techLabel } from '../lib/format'
 import { useTechStats } from '../hooks/useData'
+import { suggestForPin } from '../lib/suggest'
 
 /**
  * Type-to-search technician picker (300+ technicians).
@@ -11,9 +14,10 @@ import { useTechStats } from '../hooks/useData'
  *   extra        [{ value: 'none', label: 'Unassigned' }] shown at the top
  *   activeOnly   hide inactive technicians (the current value is always shown)
  *   size         'sm' for table rows
+ *   pinCode      the order's pin code → best-matching technicians are listed first under "Suggested"
  */
 export default function TechPicker({ techs = [], value = '', onChange, extra = [], placeholder = 'Select technician', activeOnly = true,
-  size = 'md', disabled = false, className = '', danger = false, showLoad = true }) {
+  size = 'md', disabled = false, className = '', danger = false, showLoad = true, pinCode = '' }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
   const [hi, setHi] = useState(0)
@@ -22,6 +26,20 @@ export default function TechPicker({ techs = [], value = '', onChange, extra = [
   const input = useRef(null)
   const listRef = useRef(null)
   const { data: stats = {} } = useTechStats(null, null, { enabled: open && showLoad })
+  const pin = /^\d{6}$/.test(String(pinCode || '').trim()) ? String(pinCode).trim() : ''
+  // Who has already completed jobs at this pin code (technician id → number of jobs)
+  const { data: doneHere = {} } = useQuery({
+    queryKey: ['pin-history', pin], enabled: open && !!pin, staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('orders').select('technician_id')
+        .eq('pin_code', pin).eq('status', 'COMPLETED').eq('is_deleted', false).not('technician_id', 'is', null)
+        .order('closed_at', { ascending: false }).limit(300)
+      if (error) return {}
+      const n = {}
+      for (const r of data) n[r.technician_id] = (n[r.technician_id] || 0) + 1
+      return n
+    },
+  })
 
   const current = extra.find((e) => e.value === value) || techs.find((t) => t.id === value)
   const label = current ? (current.label || techLabel(current)) : placeholder
@@ -30,16 +48,20 @@ export default function TechPicker({ techs = [], value = '', onChange, extra = [
     const s = q.trim().toLowerCase()
     const list = techs.filter((t) => (!activeOnly || t.is_active || t.id === value) &&
       (!s || [t.tech_code, t.name, t.city, t.district, t.mobile].some((v) => v && String(v).toLowerCase().includes(s))))
-    return [...(s ? [] : extra), ...list.slice(0, 80)]
-  }, [techs, q, activeOnly, value, extra])
+    if (s || !pin) return [...(s ? [] : extra), ...list.slice(0, 80)]
+    const top = suggestForPin(techs, pin, doneHere, stats)
+    const ids = new Set(top.map((t) => t.id))
+    return [...extra, ...top, ...list.filter((t) => !ids.has(t.id)).slice(0, 80)]
+  }, [techs, q, activeOnly, value, extra, pin, doneHere, stats])
+  const lastSuggested = items.reduce((n, it, i) => (it.why ? i : n), -1)
 
   const place = () => {
     const r = btn.current?.getBoundingClientRect()
     if (!r) return
-    const width = Math.max(r.width, 280)
+    const width = Math.min(Math.max(r.width, pin ? 380 : 280), window.innerWidth - 16)
     const below = window.innerHeight - r.bottom
     const up = below < 320 && r.top > below
-    setPos({ left: Math.min(r.left, window.innerWidth - width - 8), width, ...(up ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }) })
+    setPos({ left: Math.max(8, Math.min(r.left, window.innerWidth - width - 8)), width, ...(up ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }) })
   }
   const show = () => { if (disabled) return; place(); setQ(''); setHi(0); setOpen(true) }
   const pick = (v) => { setOpen(false); if (v !== value) onChange?.(v) }
@@ -86,14 +108,16 @@ export default function TechPicker({ techs = [], value = '', onChange, extra = [
               const v = it.value ?? it.id
               const st = it.id ? stats[it.id] : null
               return (
-                <li key={v || 'empty'}>
+                <li key={v || 'empty'} className={i === lastSuggested ? 'border-b border-slate-100 pb-1 mb-1' : ''}>
+                  {it.why && i === items.findIndex((x) => x.why) && <p className="px-3 pt-1.5 pb-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700 flex items-center gap-1"><MapPin size={10} /> Suggested for pin code {pin}</p>}
                   <button type="button" onMouseEnter={() => setHi(i)} onClick={() => pick(v)}
                     className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs ${i === hi ? 'bg-brand-50' : ''}`}>
                     <span className="w-4 flex-shrink-0">{v === value && <Check size={13} className="text-brand-600" />}</span>
                     {it.id ? <>
                       <span className="font-mono text-[10px] font-semibold text-brand-700 bg-brand-50 px-1.5 rounded flex-shrink-0">{it.tech_code || '—'}</span>
-                      <span className="font-semibold text-slate-800 truncate">{it.name}</span>
-                      <span className="text-slate-400 truncate">{it.city || ''}</span>
+                      <span className={`font-semibold text-slate-800 truncate ${it.why ? 'min-w-[6rem]' : ''}`}>{it.name}</span>
+                      {it.why ? <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 rounded-full truncate">{it.why}</span>
+                        : <span className="text-slate-400 truncate">{it.city || ''}</span>}
                       {!it.is_active && <span className="text-[10px] text-red-500">inactive</span>}
                       {showLoad && <span className={`ml-auto flex-shrink-0 text-[10px] font-semibold px-1.5 rounded-full ${Number(st?.pending) ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>{Number(st?.pending || 0)} open</span>}
                     </> : <span className="font-semibold text-slate-600">{it.label}</span>}

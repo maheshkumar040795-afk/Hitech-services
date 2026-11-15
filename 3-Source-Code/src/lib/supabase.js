@@ -55,6 +55,23 @@ export async function adminAction(action, payload = {}) {
   return data
 }
 
+/** fetch-sheet Edge Function: a shared Google Sheet as Excel bytes (ArrayBuffer) */
+export async function fetchSheetViaFunction(sheetId, gid) {
+  const { data, error } = await supabase.functions.invoke('fetch-sheet', { body: { sheet_id: sheetId, gid: gid || '' } })
+  if (error) {
+    let msg = ''
+    try { const b = await error.context.json(); msg = b?.error || '' } catch { /* not JSON */ }
+    const status = error.context?.status
+    if (!msg && (status === 404 || /not found|Failed to send/i.test(error.message || ''))) {
+      msg = 'Google Sheet import is not switched on yet: deploy the "fetch-sheet" Edge Function (README → Update Nov 2026 (4)). Until then, download the sheet as Excel and use Upload Excel.'
+    }
+    throw new Error(msg || error.message)
+  }
+  if (data instanceof Blob) return data.arrayBuffer()
+  if (data instanceof ArrayBuffer) return data
+  throw new Error(data?.error || 'Could not read the Google Sheet')
+}
+
 /** Supabase returns max 1000 rows per request — page through everything. */
 export async function fetchAll(buildQuery, pageSize = 1000) {
   const out = []

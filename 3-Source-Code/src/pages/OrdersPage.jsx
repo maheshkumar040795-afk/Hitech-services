@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
-import { Search, Upload, Download, Eye, MessageSquare, X, ChevronLeft, ChevronRight, Plus, FileDown, Trash2, AlertTriangle, CheckCircle2, Pencil, MapPin, CalendarClock, Save } from 'lucide-react'
-import { supabase, rpc, errMsg, fetchAll, safeSearch } from '../lib/supabase'
+import { Search, Upload, Download, Eye, MessageSquare, X, ChevronLeft, ChevronRight, Plus, FileDown, Trash2, AlertTriangle, CheckCircle2, Pencil, MapPin, CalendarClock, Save, Sheet, Loader2 } from 'lucide-react'
+import { supabase, rpc, errMsg, fetchAll, safeSearch, fetchSheetViaFunction } from '../lib/supabase'
 import { fmtDate, fmtDateTime, fmtDayIST, STATUS, PAYMENT, todayIST, techLabel, isUrl } from '../lib/format'
-import { parseOrdersFile, downloadOrdersTemplate, downloadXlsx } from '../lib/excel'
+import { parseOrdersFile, parseOrdersBuffer, fetchGoogleSheet, downloadOrdersTemplate, downloadXlsx } from '../lib/excel'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
 import { useTechnicians } from '../hooks/useData'
@@ -94,6 +94,43 @@ function UploadModal({ file, parsed, onClose, onDone }) {
   )
 }
 
+const SHEET_LINK_KEY = 'ht_sheet_link'
+const savedSheetLink = () => { try { return localStorage.getItem(SHEET_LINK_KEY) || '' } catch { return '' } }
+
+/** Import orders straight from a shared Google Sheet (same columns as the Excel upload) */
+function GoogleSheetModal({ onClose, onParsed }) {
+  const [link, setLink] = useState(savedSheetLink)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const load = async (e) => {
+    e.preventDefault(); setErr(''); setBusy(true)
+    try {
+      const parsed = parseOrdersBuffer(await fetchGoogleSheet(link, fetchSheetViaFunction))
+      try { localStorage.setItem(SHEET_LINK_KEY, link.trim()) } catch { /* private mode */ }
+      onParsed({ file: { name: 'Google Sheet' }, parsed })
+    } catch (e2) { setErr(errMsg(e2)) } finally { setBusy(false) }
+  }
+  return (
+    <Modal title="Import from Google Sheet" subtitle="Same columns as the Excel upload" onClose={onClose} width="max-w-lg">
+      <form onSubmit={load} className="space-y-4">
+        <Field label="Google Sheet link *" hint="The link is remembered on this computer, so next time you only click Read sheet.">
+          <input className="input" inputMode="url" autoFocus required placeholder="https://docs.google.com/spreadsheets/d/…" value={link} onChange={(e) => setLink(e.target.value)} />
+        </Field>
+        <ul className="text-xs text-slate-500 space-y-1 list-disc pl-4">
+          <li>In Google Sheets: <b>Share → General access → Anyone with the link</b> (Viewer).</li>
+          <li>Open the tab that has the orders, then copy the link from the address bar. That tab is the one imported.</li>
+          <li>You see a preview before anything is saved.</li>
+        </ul>
+        {err && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-xl p-3 flex gap-2"><AlertTriangle size={14} className="flex-shrink-0 mt-0.5" /> <span>{err}</span></p>}
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="btn-secondary text-xs">Cancel</button>
+          <button disabled={busy || !link.trim()} className="btn-primary text-xs">{busy ? <Loader2 size={13} className="animate-spin" /> : <Sheet size={13} />} {busy ? 'Reading…' : 'Read sheet'}</button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
 const ORDER_FIELDS = ['order_id', 'order_date', 'customer_name', 'phone_no', 'service', 'brand', 'product_type', 'location', 'address', 'pin_code', 'location_url', 'technician_id']
 
 /** Add a new order, or edit an existing one to fill in missed details */
@@ -158,7 +195,7 @@ function OrderFormModal({ order, techs, onClose, onSaved }) {
         )}
         <div className="sm:col-span-2"><Field label="Assign Technician">
           <TechPicker techs={techs} value={f.technician_id || ''} onChange={(v) => setF((p) => ({ ...p, technician_id: v }))}
-            extra={[{ value: '', label: '— Unassigned —' }]} placeholder="— Unassigned —" className="w-full" /></Field></div>
+            extra={[{ value: '', label: '— Unassigned —' }]} placeholder="— Unassigned —" className="w-full" pinCode={f.pin_code} /></Field></div>
         {completed && <>
           {'installed_item' in order && <div className="sm:col-span-2"><Field label="Installed item" hint="What the technician installed — the rate in Rate Config is taken from this.">
             <select className="input" value={f.installed_item} onChange={set('installed_item')}>
@@ -221,6 +258,7 @@ export default function OrdersPage() {
   const [detailId, setDetailId] = useState(null)
   const [upload, setUpload] = useState(null)
   const [showNew, setShowNew] = useState(false)
+  const [showSheet, setShowSheet] = useState(false)
   const [editOrder, setEditOrder] = useState(null)
   const [resched, setResched] = useState(null) // orders being rescheduled
   const [bulkTech, setBulkTech] = useState('')
@@ -280,12 +318,15 @@ export default function OrdersPage() {
   const allSel = orders.length > 0 && orders.every((o) => selected.has(o.id))
   const toggleAll = () => setSelected(allSel ? new Set() : new Set(orders.map((o) => o.id)))
   const toggle = (id) => { const s = new Set(selected); s.has(id) ? s.delete(id) : s.add(id); setSelected(s) }
+  const selPins = new Set(orders.filter((o) => selected.has(o.id)).map((o) => o.pin_code || ''))
+  const bulkPin = selPins.size === 1 ? [...selPins][0] : ''
   const filtersOn = f.search || f.status || f.tech || f.from || f.to
 
   return (
     <div className="space-y-4">
       {detailId && <OrderDrawer orderId={detailId} onClose={() => setDetailId(null)} />}
       {upload && <UploadModal {...upload} onClose={() => setUpload(null)} onDone={refresh} />}
+      {showSheet && <GoogleSheetModal onClose={() => setShowSheet(false)} onParsed={(u) => { setShowSheet(false); setUpload(u) }} />}
       {showNew && <OrderFormModal techs={techs} onClose={() => setShowNew(false)} onSaved={refresh} />}
       {editOrder && <OrderFormModal order={editOrder} techs={techs} onClose={() => setEditOrder(null)} onSaved={refresh} />}
       {resched && <RescheduleModal orders={resched} onClose={() => setResched(null)}
@@ -301,6 +342,7 @@ export default function OrdersPage() {
           <button onClick={downloadOrdersTemplate} className="btn-secondary text-xs"><Download size={13} /> Template</button>
           <button onClick={exportFiltered} disabled={busy} className="btn-secondary text-xs"><FileDown size={13} /> Export</button>
           <button onClick={() => setShowNew(true)} className="btn-secondary text-xs"><Plus size={13} /> New Order</button>
+          <button onClick={() => setShowSheet(true)} className="btn-secondary text-xs"><Sheet size={13} /> Google Sheet</button>
           <button onClick={() => fileRef.current?.click()} className="btn-primary text-xs"><Upload size={13} /> Upload Excel</button>
         </div>
       </div>
@@ -327,7 +369,7 @@ export default function OrdersPage() {
       {selected.size > 0 && (
         <div className="card p-3 bg-brand-50 border-brand-200 flex flex-wrap items-center gap-2">
           <span className="text-sm font-semibold text-brand-700 mr-2">{selected.size} selected</span>
-          <TechPicker techs={techs} value={bulkTech} onChange={setBulkTech} placeholder="Assign to…" className="w-auto min-w-[200px] py-1.5 text-xs"
+          <TechPicker techs={techs} value={bulkTech} onChange={setBulkTech} placeholder="Assign to…" className="w-auto min-w-[200px] py-1.5 text-xs" pinCode={bulkPin}
             extra={[{ value: 'none', label: '— Unassign —' }]} />
           <button disabled={!bulkTech || busy} className="btn-primary text-xs py-1.5"
             onClick={() => update([...selected], { technician_id: bulkTech === 'none' ? null : bulkTech }, `${selected.size} orders ${bulkTech === 'none' ? 'unassigned' : 'assigned'}`).then(() => { setSelected(new Set()); setBulkTech('') })}>Assign</button>
@@ -379,7 +421,7 @@ export default function OrdersPage() {
                     <td className="px-3 py-2 font-mono text-xs text-slate-400">{o.pin_code}</td>
                     <td className="px-3 py-2">
                       <TechPicker size="sm" techs={techs} value={o.technician_id || ''} disabled={busy} danger={!o.technician_id}
-                        placeholder="Unassigned" extra={[{ value: '', label: 'Unassigned' }]}
+                        placeholder="Unassigned" extra={[{ value: '', label: 'Unassigned' }]} pinCode={o.pin_code}
                         onChange={(v) => {
                           const t = techs.find((x) => x.id === v)
                           update([o.id], { technician_id: v || null }, t ? `${o.order_id} assigned to ${techLabel(t)}` : `${o.order_id} unassigned`)

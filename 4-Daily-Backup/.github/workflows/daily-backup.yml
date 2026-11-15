@@ -1,0 +1,38 @@
+# Hitech Services — automatic daily backup of the Supabase database.
+# Runs on GitHub's servers every night and saves the data in this PRIVATE repository (folder: data/).
+# Every night's copy is kept: open "Commits" to go back to any earlier day.
+name: Daily backup
+on:
+  schedule:
+    - cron: '47 19 * * *'   # every day at 01:17 AM India time
+  workflow_dispatch:         # "Run workflow" button, to take a backup right now
+permissions:
+  contents: write
+concurrency:
+  group: backup
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Download all tables from Supabase
+        id: dump
+        env:
+          SUPABASE_URL: https://eqtdqqhnwfsmoamxvain.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node backup.mjs
+      - name: Save the backup in this repository
+        run: |
+          git config user.name "Hitech backup"
+          git config user.email "backup@users.noreply.github.com"
+          git add data
+          if git diff --cached --quiet; then
+            echo "Nothing changed since the last backup."
+          else
+            git commit -q -m "Backup $(TZ=Asia/Kolkata date +'%d %b %Y'): ${{ steps.dump.outputs.summary }}"
+            git push -q
+          fi

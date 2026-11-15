@@ -218,3 +218,14 @@ Only **ORDER ID** and **CUSTOMER NAME** are required. Download **Template** on t
 - **Rate / payout** is taken from Rate Config for the **installed item** (Within/Outside Chennai), not the order's service text. If no item is picked, the service is used as before.
 - Office sees the installed item under *Completed* in Orders, in the order drawer, in Export (`Installed Item`) and in Technician Payout. Edit order (completed) → *Installed item* to correct it.
 - To add or rename items (e.g. "Refrigerator Installation"), edit the Rate Config list — technicians see the change next time they open the form.
+
+## Update — Nov 2026 (4): Google Sheet import, technician suggestion by pin code, automatic daily backup
+
+- **Orders → Google Sheet:** paste the link of a Google Sheet (shared as *Anyone with the link*) and its orders are read into the same preview as **Upload Excel**. Same columns as the Excel template. The link is remembered on that computer. The tab that is open when the link is copied is the one imported.
+- **Technician suggestion:** when assigning an order, the picker lists the best matches for the order's pin code first under **Suggested**: technicians living at the same pin code, then those who already completed jobs there, then those nearby (same first 3 digits). Fewer open jobs comes first. Fill in each technician's **Pincode** on the Technicians page to get the most from it.
+- **Automatic daily backup:** every night GitHub saves every table as a CSV file in a separate **private** repository. Setup and restore steps: `4-Daily-Backup/README.md`.
+
+**One-time setup**
+1. Google Sheet import: Edge Functions → Deploy new function → name **`fetch-sheet`** → paste `2-Supabase-Setup/functions/fetch-sheet/index.ts` → keep **Verify JWT on** → Deploy. (Without it the app still tries to read the sheet directly, but Google often refuses browsers.)
+2. Daily backup: follow `4-Daily-Backup/README.md` (about 5 minutes).
+3. Technician suggestion needs no setup and no SQL.

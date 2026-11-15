@@ -47,10 +47,15 @@ export function toISODate(v) {
 
 /** Read the first sheet of an .xlsx/.xls/.csv file → normalised order rows */
 export async function parseOrdersFile(file) {
-  const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' })
+  return parseOrdersBuffer(await file.arrayBuffer())
+}
+
+/** Same as parseOrdersFile, for file bytes that did not come from a file picker (Google Sheet import) */
+export function parseOrdersBuffer(buffer) {
+  const wb = XLSX.read(buffer, { type: 'array' })
   const ws = wb.Sheets[wb.SheetNames[0]]
   const raw = XLSX.utils.sheet_to_json(ws, { defval: '', raw: true })
-  if (!raw.length) throw new Error('The file has no data rows')
+  if (!raw.length) throw new Error('The sheet has no data rows')
 
   const headers = Object.keys(raw[0])
   const colFor = {}
@@ -108,4 +113,35 @@ export function downloadOrdersTemplate() {
 export async function readSheetRows(file) {
   const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' })
   return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '', raw: false })
+}
+
+/** Google Sheets link (or bare sheet id) → { id, gid }. null when it is not a Sheets link. */
+export function parseSheetLink(input) {
+  const s = String(input || '').trim()
+  if (!s) return null
+  if (/\/spreadsheets\/d\/e\//.test(s)) return { published: true }   // "Publish to web" link — has no sheet id
+  const id = (s.match(/\/spreadsheets\/d\/([A-Za-z0-9_-]{20,})/) || [])[1] || (/^[A-Za-z0-9_-]{30,}$/.test(s) ? s : '')
+  if (!id) return null
+  const gid = (s.match(/[#?&]gid=(\d+)/) || [])[1] || ''
+  return { id, gid }
+}
+
+const isXlsx = (buf) => { const b = new Uint8Array(buf.slice(0, 2)); return b[0] === 0x50 && b[1] === 0x4b }   // zip "PK"
+
+/**
+ * Download a Google Sheet shared as "Anyone with the link" as Excel bytes.
+ * Tries the browser first (no setup needed); Google often refuses browsers, so the
+ * fetch-sheet Edge Function is the fallback. `viaFunction(id, gid)` must return an ArrayBuffer.
+ */
+export async function fetchGoogleSheet(link, viaFunction) {
+  const ref = parseSheetLink(link)
+  if (!ref) throw new Error('Paste the link of a Google Sheet (https://docs.google.com/spreadsheets/d/…)')
+  if (ref.published) throw new Error('This is a "Publish to web" link. Paste the normal link from the browser address bar or the Share button instead.')
+  try {
+    const res = await fetch(`https://docs.google.com/spreadsheets/d/${ref.id}/export?format=xlsx${ref.gid ? `&gid=${ref.gid}` : ''}`, { credentials: 'omit' })
+    if (res.ok) { const buf = await res.arrayBuffer(); if (isXlsx(buf)) return buf }
+  } catch { /* blocked by the browser → use the Edge Function */ }
+  const buf = await viaFunction(ref.id, ref.gid)
+  if (!isXlsx(buf)) throw new Error('Google did not return a sheet. Check that it is shared as "Anyone with the link".')
+  return buf
 }
