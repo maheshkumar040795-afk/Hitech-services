@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Download, Search } from 'lucide-react'
 import { supabase, rpc, errMsg, fetchAll } from '../lib/supabase'
-import { fmtDate, fmtDateTime, fmtDayIST, fmtMoney, STATUS, PAYMENT, todayIST, addDays, techLabel } from '../lib/format'
+import { fmtDate, fmtDateTime, fmtDayIST, fmtMoney, STATUS, payLabel, todayIST, addDays, techLabel } from '../lib/format'
 import { downloadXlsx } from '../lib/excel'
 import { useTechnicians } from '../hooks/useData'
 import TechPicker from '../components/TechPicker'
@@ -53,7 +53,7 @@ export default function ReportsPage() {
         'Order Date': fmtDate(o.order_date), 'Rescheduled To': o.rescheduled_date ? fmtDate(o.rescheduled_date) : '', 'Order ID': o.order_id, 'Customer Name': o.customer_name, 'Phone No': o.phone_no || '',
         Service: o.service || '', Brand: o.brand || '', Location: o.location || '', Address: o.address || '', 'Pin Code': o.pin_code || '', 'Google Location': o.location_url || '',
         Status: STATUS[o.status]?.label || o.status, 'Completed On': o.status === 'COMPLETED' && o.closed_at ? fmtDayIST(o.closed_at) : '',
-        'Amount Collected': Number(o.cod_amount || 0), Payment: PAYMENT[o.payment_mode] || '', 'Technician ID': techs.find((t) => t.id === o.technician_id)?.tech_code || '', Technician: o.technician?.name || 'Unassigned',
+        'Collected from customer': Number(o.cod_amount || 0), Payment: payLabel(o), 'Technician ID': techs.find((t) => t.id === o.technician_id)?.tech_code || '', Technician: o.technician?.name || 'Unassigned',
         'Tech Mobile': o.technician?.mobile || '', 'Closed At': o.closed_at ? fmtDateTime(o.closed_at) : '',
         Comments: (o.comment_logs || []).sort((a, b) => a.created_at.localeCompare(b.created_at))
           .map((c) => `[${c.user?.name || '?'} ${fmtDateTime(c.created_at)}] ${c.comment}`).join(' | ') || o.comments || '',
@@ -85,9 +85,8 @@ export default function ReportsPage() {
         <button onClick={() => setActive(f)} className="btn-primary text-xs py-2.5"><Search size={12} /> Retrieve</button>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3">
-        {[['Total', s?.total], ['Completed', s?.completed], ['Pending', s?.pending], ['Rejected', s?.rejected], ['Collected', s ? fmtMoney(s.amount) : null],
-          ...(s?.amount_cash !== undefined ? [['Cash', fmtMoney(s.amount_cash)], ['Online', fmtMoney(s.amount_online)]] : [])].map(([l, v]) => (
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        {[['Total', s?.total], ['Completed', s?.completed], ['Pending', s?.pending], ['Rejected', s?.rejected], ['Collected from customers', s ? fmtMoney(s.amount) : null]].map(([l, v]) => (
           <div key={l} className="card p-4"><p className="text-xs text-slate-500">{l}</p><p className="text-xl font-bold text-slate-900">{v ?? '—'}</p></div>
         ))}
       </div>
@@ -128,7 +127,7 @@ export default function ReportsPage() {
                   <td className="px-3 py-2 text-xs">{o.technician?.name || '—'}</td>
                   <td className="px-3 py-2"><span className={(STATUS[o.status] || STATUS.PENDING).badge}>{(STATUS[o.status] || STATUS.PENDING).label}</span>{o.rescheduled_date && <div className="text-[10px] text-sky-700 mt-0.5">to {fmtDate(o.rescheduled_date)}</div>}</td>
                   <td className="px-3 py-2 text-xs whitespace-nowrap">{o.status === 'COMPLETED' && o.closed_at ? fmtDayIST(o.closed_at) : '—'}</td>
-                  <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtMoney(o.cod_amount)}{o.payment_mode && <span className="ml-1 text-[10px] text-slate-500">{PAYMENT[o.payment_mode]}</span>}</td>
+                  <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtMoney(o.cod_amount)}{o.payment_mode === 'AMAZON' && <span className="ml-1 text-[10px] text-slate-500">Paid on Amazon</span>}</td>
                   <td className="px-3 py-2 text-xs text-slate-500 max-w-[200px] truncate">{o.comments || '—'}</td>
                 </tr>))}
           </tbody>

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Phone, MapPin, MessageCircle, ChevronRight, X, CheckCircle2, XCircle, Clock, RefreshCw, LogOut,
-  User, Lock, Send, Search, RotateCcw, Pencil, KeyRound, Wifi, WifiOff, CalendarDays, ClipboardList, CalendarClock, Banknote, Smartphone, BellRing, ShoppingBag, Wrench,
+  User, Lock, Send, Search, RotateCcw, Pencil, KeyRound, Wifi, WifiOff, CalendarDays, ClipboardList, CalendarClock, Banknote, BellRing, ShoppingBag, Wrench,
 } from 'lucide-react'
 import { supabase, rpc, errMsg } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -74,22 +74,20 @@ function CompleteSheet({ job, onClose, onDone }) {
     if (!item && items.length) { const m = items.find((i) => norm(i) === norm(job.service)); if (m) setItem(m) }
   }, [items]) // eslint-disable-line react-hooks/exhaustive-deps
   const [pay, setPay] = useState(job.payment_mode === 'AMAZON' ? 'AMAZON' : (job.payment_mode ? 'COLLECT' : ''))   // COLLECT | AMAZON
-  const [mode, setMode] = useState(job.payment_mode === 'CASH' || job.payment_mode === 'ONLINE' ? job.payment_mode : '')   // CASH | ONLINE
   const [amount, setAmount] = useState(done && job.payment_mode !== 'AMAZON' && Number(job.cod_amount) > 0 ? String(Number(job.cod_amount)) : '')
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const submit = async (e) => {
     e.preventDefault()
     if (items.length && !item) return toast('Select what you installed', 'error')
-    if (!pay) return toast('Select Collect amount or Paid on Amazon', 'error')
+    if (!pay) return toast('Select Collect from customer or Paid on Amazon', 'error')
     const amazon = pay === 'AMAZON'
     const v = amazon ? 0 : parseFloat(amount)
-    if (!amazon && !mode) return toast('Select Cash or Online', 'error')
-    if (!amazon && (amount === '' || isNaN(v) || v <= 0)) return toast('Enter the amount collected', 'error')
+    if (!amazon && (amount === '' || isNaN(v) || v <= 0)) return toast('Enter the amount collected from the customer', 'error')
     setBusy(true)
     try {
       const base = { p_order: job.id, p_status: 'COMPLETED', p_amount: v, p_note: note || null }
-      const withMode = { ...base, p_payment_mode: amazon ? 'AMAZON' : mode }
+      const withMode = { ...base, p_payment_mode: amazon ? 'AMAZON' : 'CASH' }   // CASH = collected from customer
       const old = (err) => /p_installed_item|p_payment_mode|schema cache|Could not find the function/i.test(err?.message || '')
       try { await rpc('tech_update_job', item ? { ...withMode, p_installed_item: item } : withMode) }
       catch (err) {   // server not updated yet → save what it understands
@@ -98,7 +96,7 @@ function CompleteSheet({ job, onClose, onDone }) {
         catch (err2) { if (old(err2)) await rpc('tech_update_job', base); else throw err2 }
       }
       navigator.vibrate?.(60)
-      toast(amazon ? 'Job completed · paid on Amazon' : `Job completed · ${fmtMoney(v)} ${mode === 'ONLINE' ? 'online' : 'cash'}`, 'success')
+      toast(amazon ? 'Job completed · paid on Amazon' : `Job completed · ${fmtMoney(v)} collected from customer`, 'success')
       onDone()
     } catch (err) { toast(errMsg(err), 'error') } finally { setBusy(false) }
   }
@@ -131,23 +129,18 @@ function CompleteSheet({ job, onClose, onDone }) {
           <div className="grid grid-cols-2 gap-2">
             <button type="button" onClick={() => setPay('COLLECT')}
               className={`py-3.5 px-2 flex flex-col items-center gap-1 text-sm ${choice('border-emerald-500 bg-emerald-50 text-emerald-700', pay === 'COLLECT')}`}>
-              <Banknote size={22} /> Collect amount</button>
-            <button type="button" onClick={() => { setPay('AMAZON'); setMode('') }}
+              <Banknote size={22} /> Collect from customer</button>
+            <button type="button" onClick={() => setPay('AMAZON')}
               className={`py-3.5 px-2 flex flex-col items-center gap-1 text-sm ${choice('border-amber-500 bg-amber-50 text-amber-800', pay === 'AMAZON')}`}>
               <ShoppingBag size={22} /> Paid on Amazon</button>
           </div>
           {pay === 'AMAZON' && <p className="text-xs text-amber-700 mt-1.5">Customer already paid on Amazon — nothing to collect (₹0).</p>}
           {pay === 'COLLECT' && (
             <div className="mt-3 space-y-3 rounded-2xl bg-slate-50 p-3">
-              <div className="grid grid-cols-2 gap-2">
-                {[['CASH', 'Cash', Banknote, 'border-emerald-500 bg-white text-emerald-700'], ['ONLINE', 'Online / UPI', Smartphone, 'border-violet-500 bg-white text-violet-700']].map(([k, l, Icon, on]) => (
-                  <button key={k} type="button" onClick={() => setMode(k)}
-                    className={`py-3 flex items-center justify-center gap-2 text-sm ${choice(on, mode === k)} ${mode === k ? '' : 'bg-white'}`}><Icon size={18} /> {l}</button>
-                ))}
-              </div>
+              <p className="text-xs text-slate-600">Amount you received from the customer (cash or UPI). It is deducted from your pay for this job.</p>
               <div className="flex items-center rounded-2xl border-2 border-slate-200 bg-white focus-within:border-emerald-500 overflow-hidden">
                 <span className="pl-4 text-2xl font-bold text-slate-400">₹</span>
-                <input type="number" inputMode="decimal" min="0" step="0.01" placeholder="Amount collected"
+                <input type="number" inputMode="decimal" min="0" step="0.01" placeholder="Amount collected" autoFocus
                   className="flex-1 min-w-0 py-3.5 px-3 text-2xl font-bold outline-none bg-transparent placeholder:text-base placeholder:font-medium" value={amount} onChange={(e) => setAmount(e.target.value)} />
               </div>
             </div>
@@ -269,7 +262,7 @@ function JobDetail({ job, onClose, refresh }) {
               ['Order date', fmtDate(job.order_date, { day: 'numeric', month: 'short', year: 'numeric' })],
               ...(job.rescheduled_date ? [['Rescheduled to', fmtDate(job.rescheduled_date, { day: 'numeric', month: 'short', year: 'numeric' })]] : []),
               ...(!isOpen(job) ? [[job.status === 'COMPLETED' ? 'Completed on' : 'Closed', fmtDateTime(job.closed_at)]] : []),
-              ...(job.status === 'COMPLETED' ? [['Amount collected', (job.payment_mode === 'AMAZON' ? 'Paid on Amazon' : `${fmtMoney(job.cod_amount)}${job.payment_mode ? ` · ${job.payment_mode === 'ONLINE' ? 'Online' : 'Cash'}` : ''}`)]] : []),
+              ...(job.status === 'COMPLETED' ? [['Payment', (job.payment_mode === 'AMAZON' ? 'Paid on Amazon' : `${fmtMoney(job.cod_amount)} collected from customer`)]] : []),
             ].map(([l, v]) => (
               <div key={l} className="flex gap-3 px-4 py-3"><span className="text-xs text-slate-400 w-24 flex-shrink-0 pt-0.5">{l}</span><span className="text-[15px] text-slate-800 font-medium break-words">{v}</span></div>
             ))}
@@ -347,7 +340,7 @@ function JobCard({ job, onOpen, isNew }) {
             <p className="text-[17px] font-bold text-slate-900 truncate">{job.customer_name}</p>
             <p className="text-sm text-slate-600 truncate">{[job.service, job.brand].filter(Boolean).join(' · ')}</p>
             <p className="text-sm text-slate-500 truncate mt-0.5"><MapPin size={12} className="inline -mt-0.5" /> {[job.location, job.pin_code].filter(Boolean).join(' · ') || '—'}</p>
-            {job.status === 'COMPLETED' && <p className="text-sm font-bold text-emerald-700 mt-1">{job.payment_mode === 'AMAZON' ? 'Paid on Amazon' : <>{fmtMoney(job.cod_amount)} collected{job.payment_mode ? ` · ${job.payment_mode === 'ONLINE' ? 'Online' : 'Cash'}` : ''}</>} <span className="font-medium text-slate-400">· {fmtDayIST(job.closed_at, { day: 'numeric', month: 'short' })}</span></p>}
+            {job.status === 'COMPLETED' && <p className="text-sm font-bold text-emerald-700 mt-1">{job.payment_mode === 'AMAZON' ? 'Paid on Amazon' : <>{fmtMoney(job.cod_amount)} collected from customer</>} <span className="font-medium text-slate-400">· {fmtDayIST(job.closed_at, { day: 'numeric', month: 'short' })}</span></p>}
             {job.status === 'COMPLETED' && job.installed_item && <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1"><Wrench size={11} /> {job.installed_item}</p>}
           </div>
           <ChevronRight size={20} className="text-slate-300 mt-2 flex-shrink-0" />

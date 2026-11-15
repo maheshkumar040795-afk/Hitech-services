@@ -48,7 +48,12 @@ export const STATUS = {
 }
 /** Statuses that still need a visit */
 export const OPEN_STATUSES = ['PENDING', 'RESCHEDULED']
-export const PAYMENT = { CASH: 'Cash', ONLINE: 'Online', AMAZON: 'Paid on Amazon' }
+// Payment on a completed job: the technician either collected the amount from the customer, or the customer paid on Amazon.
+// (Older jobs were saved as CASH or ONLINE — both mean "collected from customer". New jobs are saved as CASH.)
+export const PAYMENT = { CASH: 'Collected from customer', ONLINE: 'Collected from customer', AMAZON: 'Paid on Amazon' }
+export const COLLECTED = 'CASH'
+/** 'Paid on Amazon' | 'Collected from customer' | '' for an order */
+export const payLabel = (o) => o?.payment_mode === 'AMAZON' ? PAYMENT.AMAZON : Number(o?.cod_amount) > 0 ? PAYMENT.CASH : ''
 
 /** Google Maps link saved on the order wins; otherwise search by address */
 export const isUrl = (u) => /^https?:\/\/\S+$/i.test(String(u || '').trim())

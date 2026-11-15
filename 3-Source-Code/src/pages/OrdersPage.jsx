@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import { Search, Upload, Download, Eye, MessageSquare, X, ChevronLeft, ChevronRight, Plus, FileDown, Trash2, AlertTriangle, CheckCircle2, Pencil, MapPin, CalendarClock, Save, Sheet, Loader2 } from 'lucide-react'
 import { supabase, rpc, errMsg, fetchAll, safeSearch, fetchSheetViaFunction } from '../lib/supabase'
-import { fmtDate, fmtDateTime, fmtDayIST, STATUS, PAYMENT, todayIST, techLabel, isUrl } from '../lib/format'
+import { fmtDate, fmtDateTime, fmtDayIST, STATUS, PAYMENT, payLabel, todayIST, techLabel, isUrl } from '../lib/format'
 import { parseOrdersFile, parseOrdersBuffer, fetchGoogleSheet, downloadOrdersTemplate, downloadXlsx } from '../lib/excel'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
@@ -141,7 +141,7 @@ function OrderFormModal({ order, techs, onClose, onSaved }) {
     const base = { order_id: '', order_date: todayIST(), customer_name: '', phone_no: '', service: '', brand: '', product_type: '', location: '', address: '', pin_code: '', location_url: '', technician_id: '' }
     if (!order) return base
     const o = Object.fromEntries(ORDER_FIELDS.map((k) => [k, order[k] ?? '']))
-    return { ...base, ...o, cod_amount: order.cod_amount ?? 0, payment_mode: order.payment_mode || '', region: order.region || '', installed_item: order.installed_item || '' }
+    return { ...base, ...o, cod_amount: order.cod_amount ?? 0, payment_mode: order.payment_mode === 'AMAZON' ? 'AMAZON' : Number(order.cod_amount) > 0 ? 'CASH' : '', region: order.region || '', installed_item: order.installed_item || '' }
   })
   const [busy, setBusy] = useState(false)
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }))
@@ -159,7 +159,8 @@ function OrderFormModal({ order, techs, onClose, onSaved }) {
     if (editing && 'region' in order && f.region) row.region = f.region
     if (completed) {
       row.cod_amount = Math.max(0, parseFloat(f.cod_amount) || 0)
-      row.payment_mode = f.payment_mode === 'AMAZON' ? 'AMAZON' : row.cod_amount > 0 ? (f.payment_mode || null) : null
+      if (f.payment_mode === 'AMAZON') row.cod_amount = 0
+      row.payment_mode = f.payment_mode === 'AMAZON' ? 'AMAZON' : row.cod_amount > 0 ? 'CASH' : null   // CASH = collected from customer
       if ('installed_item' in order) row.installed_item = f.installed_item || null
     }
     setBusy(true)
@@ -202,11 +203,12 @@ function OrderFormModal({ order, techs, onClose, onSaved }) {
               <option value="">— Same as service —</option>
               {[...new Set([...(f.installed_item ? [f.installed_item] : []), ...items])].map((i) => <option key={i} value={i}>{i}</option>)}
             </select></Field></div>}
-          <Field label="Amount collected ₹"><input type="number" min="0" step="0.01" className="input" value={f.cod_amount} onChange={set('cod_amount')} /></Field>
           <Field label="Payment">
-            <select className="input" value={f.payment_mode} onChange={set('payment_mode')}>
-              <option value="">—</option><option value="CASH">Cash</option><option value="ONLINE">Online</option><option value="AMAZON">Paid on Amazon</option>
+            <select className="input" value={f.payment_mode === 'AMAZON' ? 'AMAZON' : 'CASH'} onChange={set('payment_mode')}>
+              <option value="CASH">Collected from customer</option><option value="AMAZON">Paid on Amazon</option>
             </select></Field>
+          <Field label="Collected from customer ₹" hint={f.payment_mode === 'AMAZON' ? 'Paid on Amazon: nothing collected.' : 'Deducted from the technician\'s pay in Technician Payout.'}>
+            <input type="number" min="0" step="0.01" className="input" disabled={f.payment_mode === 'AMAZON'} value={f.payment_mode === 'AMAZON' ? 0 : f.cod_amount} onChange={set('cod_amount')} /></Field>
         </>}
         <div className="sm:col-span-2 flex justify-end gap-2 pt-2">
           <button type="button" onClick={onClose} className="btn-secondary text-xs">Cancel</button>
@@ -243,6 +245,79 @@ function RescheduleModal({ orders, onClose, onSave }) {
   )
 }
 
+/**
+ * Office marks a job Completed on behalf of the technician: ask the same two things HT Jobs asks,
+ * so every completed job has an installed item (→ rate from Rate Config) and a payment (→ deducted in Payout).
+ */
+function CompleteModal({ order, techs, onClose, onSaved }) {
+  const { toast } = useToast()
+  const { data: items = [], isLoading } = useQuery({
+    queryKey: ['service-rates-names'], staleTime: 5 * 60_000,
+    queryFn: async () => { const { data } = await supabase.from('service_rates').select('service').order('service'); return (data || []).map((r) => r.service) },
+  })
+  const norm = (x) => String(x || '').trim().toLowerCase()
+  const [item, setItem] = useState(order.installed_item || '')
+  useEffect(() => {
+    if (!item && items.length) { const m = items.find((i) => norm(i) === norm(order.service)); if (m) setItem(m) }
+  }, [items]) // eslint-disable-line react-hooks/exhaustive-deps
+  const had = Number(order.cod_amount) > 0
+  const [pay, setPay] = useState(order.payment_mode === 'AMAZON' ? 'AMAZON' : had ? 'CASH' : '')
+  const [amount, setAmount] = useState(had ? String(Number(order.cod_amount)) : '')
+  const [busy, setBusy] = useState(false)
+  const tech = techs.find((t) => t.id === order.technician_id)
+  const save = async (e) => {
+    e.preventDefault()
+    if (items.length && !item) return toast('Select what was installed', 'error')
+    if (!pay) return toast('Select Collected from customer or Paid on Amazon', 'error')
+    const amazon = pay === 'AMAZON'
+    const v = amazon ? 0 : Math.round((parseFloat(amount) || 0) * 100) / 100
+    if (!amazon && v <= 0) return toast('Enter the amount collected from the customer', 'error')
+    setBusy(true)
+    // payout_rate: null → the database takes the rate again from Rate Config for the installed item
+    const patch = { status: 'COMPLETED', cod_amount: v, payment_mode: amazon ? 'AMAZON' : 'CASH', payout_rate: null }
+    if (item) patch.installed_item = item
+    let { error } = await supabase.from('orders').update(patch).eq('id', order.id)
+    if (error && /payout_rate|installed_item/.test(error.message || '')) {   // older database without these columns
+      const { payout_rate, installed_item, ...basic } = patch
+      ;({ error } = await supabase.from('orders').update(basic).eq('id', order.id))
+    }
+    setBusy(false)
+    if (error) return toast(errMsg(error), 'error')
+    toast(`${order.order_id} completed · ${amazon ? 'paid on Amazon' : `₹${v} collected from customer`}`, 'success')
+    onSaved(); onClose()
+  }
+  const opt = (on) => `flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border-2 text-xs font-bold transition ${on}`
+  return (
+    <Modal title="Mark as completed" subtitle={`${order.order_id} · ${order.customer_name}`} onClose={onClose} width="max-w-lg">
+      <form onSubmit={save} className="space-y-4">
+        <p className="text-xs text-slate-500">Service on the order: <b className="text-slate-700">{order.service || '—'}</b> · Technician: <b className="text-slate-700">{tech ? techLabel(tech) : 'not assigned'}</b></p>
+        {!tech && <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-2.5 flex gap-2"><AlertTriangle size={14} className="flex-shrink-0 mt-0.5" /> No technician is assigned, so this job will not appear in Technician Payout. Assign the technician first if it should.</p>}
+        <Field label="1. What was installed? *" hint="The technician's rate is taken from Rate Config for this item.">
+          {isLoading ? <div className="h-10 rounded-xl bg-slate-100 animate-pulse" /> : items.length ? (
+            <select className="input" value={item} onChange={(e) => setItem(e.target.value)} required autoFocus>
+              <option value="">— Select —</option>
+              {[...new Set([...(item ? [item] : []), ...items])].map((i) => <option key={i} value={i}>{i}</option>)}
+            </select>
+          ) : <p className="text-xs text-slate-500">No items in Rate Config yet. The rate will be taken from the order's service.</p>}
+        </Field>
+        <Field label="2. Payment *">
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setPay('CASH')} className={opt(pay === 'CASH' ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-600 hover:border-slate-300')}>Collected from customer</button>
+            <button type="button" onClick={() => setPay('AMAZON')} className={opt(pay === 'AMAZON' ? 'border-amber-500 bg-amber-50 text-amber-800' : 'border-slate-200 text-slate-600 hover:border-slate-300')}>Paid on Amazon</button>
+          </div>
+        </Field>
+        {pay === 'CASH' && <Field label="Amount the technician collected ₹ *" hint="Cash or UPI received by the technician. It is deducted from his pay in Technician Payout.">
+          <input type="number" min="0" step="0.01" inputMode="decimal" className="input" placeholder="0" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>}
+        {pay === 'AMAZON' && <p className="text-xs text-amber-700">Customer already paid on Amazon: nothing collected (₹0), the technician gets the full rate.</p>}
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" onClick={onClose} className="btn-secondary text-xs">Cancel</button>
+          <button disabled={busy} className="btn-primary text-xs"><CheckCircle2 size={13} /> {busy ? 'Saving…' : 'Mark completed'}</button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
 export default function OrdersPage() {
   const qc = useQueryClient()
   const { toast } = useToast()
@@ -261,6 +336,7 @@ export default function OrdersPage() {
   const [showSheet, setShowSheet] = useState(false)
   const [editOrder, setEditOrder] = useState(null)
   const [resched, setResched] = useState(null) // orders being rescheduled
+  const [completing, setCompleting] = useState(null) // order the office is marking Completed
   const [bulkTech, setBulkTech] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -309,7 +385,7 @@ export default function OrdersPage() {
         'Sheet Status': o.source_status || '', 'Installed Item': o.installed_item || '', 'Technician ID': techs.find((t) => t.id === o.technician_id)?.tech_code || '',
         'Rescheduled To': o.rescheduled_date ? fmtDate(o.rescheduled_date) : '', Address: o.address || '', 'Google Location': o.location_url || '',
         'Completed On': o.status === 'COMPLETED' && o.closed_at ? fmtDayIST(o.closed_at) : '', 'Not Done On': o.status === 'REJECTED' && o.closed_at ? fmtDayIST(o.closed_at) : '',
-        Amount: Number(o.cod_amount || 0), Payment: PAYMENT[o.payment_mode] || '', Comments: o.comments || '',
+        'Collected from customer': Number(o.cod_amount || 0), Payment: payLabel(o), Comments: o.comments || '',
         'Modified By': o.modifier?.name || '', 'Modified At': o.modified_at ? fmtDateTime(o.modified_at) : '',
       })) }])
     } catch (e) { toast(errMsg(e), 'error') } finally { setBusy(false) }
@@ -329,6 +405,7 @@ export default function OrdersPage() {
       {showSheet && <GoogleSheetModal onClose={() => setShowSheet(false)} onParsed={(u) => { setShowSheet(false); setUpload(u) }} />}
       {showNew && <OrderFormModal techs={techs} onClose={() => setShowNew(false)} onSaved={refresh} />}
       {editOrder && <OrderFormModal order={editOrder} techs={techs} onClose={() => setEditOrder(null)} onSaved={refresh} />}
+      {completing && <CompleteModal order={completing} techs={techs} onClose={() => setCompleting(null)} onSaved={() => { refresh(); setSelected(new Set()) }} />}
       {resched && <RescheduleModal orders={resched} onClose={() => setResched(null)}
         onSave={async (date) => { await update(resched.map((o) => o.id), { status: 'RESCHEDULED', rescheduled_date: date }, `${resched.length === 1 ? resched[0].order_id : resched.length + ' orders'} rescheduled to ${fmtDate(date)}`); setResched(null); setSelected(new Set()) }} />}
       <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={onFile} />
@@ -375,7 +452,11 @@ export default function OrdersPage() {
             onClick={() => update([...selected], { technician_id: bulkTech === 'none' ? null : bulkTech }, `${selected.size} orders ${bulkTech === 'none' ? 'unassigned' : 'assigned'}`).then(() => { setSelected(new Set()); setBulkTech('') })}>Assign</button>
           <span className="w-px h-6 bg-brand-200 mx-1" />
           {['PENDING', 'COMPLETED', 'REJECTED'].map((s) => (
-            <button key={s} disabled={busy} onClick={() => update([...selected], { status: s }, `${selected.size} orders → ${STATUS[s].label}`).then(() => setSelected(new Set()))}
+            <button key={s} disabled={busy} onClick={() => {
+              const one = selected.size === 1 && orders.find((o) => selected.has(o.id))
+              if (s === 'COMPLETED' && one) return setCompleting(one)   // one order → ask installed item + payment
+              update([...selected], { status: s }, s === 'COMPLETED' ? `${selected.size} orders → Completed. Open each one (pencil) to set the installed item and amount collected.` : `${selected.size} orders → ${STATUS[s].label}`).then(() => setSelected(new Set()))
+            }}
               className={`text-xs font-semibold px-3 py-1.5 rounded-lg border ${STATUS[s].bg} ${STATUS[s].text} ${STATUS[s].border}`}>→ {STATUS[s].label}</button>
           ))}
           <button disabled={busy} onClick={() => setResched(orders.filter((o) => selected.has(o.id)))}
@@ -394,7 +475,7 @@ export default function OrdersPage() {
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
                 <th className="px-3 py-3 w-10"><input type="checkbox" checked={allSel} onChange={toggleAll} /></th>
-                {['Date', 'Service Order ID', 'Customer Name', 'Phone Number', 'Service', 'Brand', 'Product Type', 'Location', 'Pin Code', 'Technician', 'Status', 'Completed / Installed', 'Amount ₹', 'Comment', 'Modified', ''].map((h) => (
+                {['Date', 'Service Order ID', 'Customer Name', 'Phone Number', 'Service', 'Brand', 'Product Type', 'Location', 'Pin Code', 'Technician', 'Status', 'Completed / Installed', 'Collected ₹', 'Comment', 'Modified', ''].map((h) => (
                   <th key={h} className="px-3 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -428,7 +509,7 @@ export default function OrdersPage() {
                         }} />
                     </td>
                     <td className="px-3 py-2">
-                      <select value={o.status} disabled={busy} onChange={(e) => e.target.value === 'RESCHEDULED' ? setResched([o]) : update([o.id], { status: e.target.value }, `${o.order_id} → ${STATUS[e.target.value].label}`)}
+                      <select value={o.status} disabled={busy} onChange={(e) => e.target.value === 'RESCHEDULED' ? setResched([o]) : e.target.value === 'COMPLETED' ? setCompleting(o) : update([o.id], { status: e.target.value }, `${o.order_id} → ${STATUS[e.target.value].label}`)}
                         className={`text-[10px] font-semibold px-2 py-1 rounded-lg border ${sc.bg} ${sc.text} ${sc.border}`}>
                         <option value="PENDING">Pending</option><option value="RESCHEDULED">Rescheduled</option><option value="COMPLETED">Completed</option><option value="REJECTED">Rejected</option>
                       </select>
@@ -446,10 +527,10 @@ export default function OrdersPage() {
                         className="w-20 text-xs px-2 py-1 border border-slate-200 rounded-lg text-right"
                         onBlur={(e) => { const v = Math.max(0, parseFloat(e.target.value) || 0); if (v !== Number(o.cod_amount || 0)) update([o.id], { cod_amount: v }, 'Amount saved') }} />
                       {o.status === 'COMPLETED' && (Number(o.cod_amount) > 0 || o.payment_mode === 'AMAZON') && (
-                        <select value={o.payment_mode || ''} disabled={busy} title="Cash or Online"
-                          onChange={(e) => update([o.id], { payment_mode: e.target.value || null }, `Payment: ${PAYMENT[e.target.value] || 'not set'}`)}
-                          className={`block mt-1 w-20 text-[10px] font-semibold px-1.5 py-0.5 rounded-md border ${o.payment_mode === 'ONLINE' ? 'bg-violet-50 text-violet-700 border-violet-200' : o.payment_mode === 'AMAZON' ? 'bg-amber-50 text-amber-800 border-amber-300' : o.payment_mode === 'CASH' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
-                          <option value="">Mode?</option><option value="CASH">Cash</option><option value="ONLINE">Online</option><option value="AMAZON">Amazon</option>
+                        <select value={o.payment_mode === 'AMAZON' ? 'AMAZON' : 'CASH'} disabled={busy} title="Collected from customer, or paid on Amazon"
+                          onChange={(e) => update([o.id], { payment_mode: e.target.value }, `Payment: ${PAYMENT[e.target.value]}`)}
+                          className={`block mt-1 w-24 text-[10px] font-semibold px-1.5 py-0.5 rounded-md border ${o.payment_mode === 'AMAZON' ? 'bg-amber-50 text-amber-800 border-amber-300' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
+                          <option value="CASH">Collected</option><option value="AMAZON">Amazon</option>
                         </select>
                       )}
                     </td>

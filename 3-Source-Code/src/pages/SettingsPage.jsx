@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Eye, EyeOff, Shield, Building2, Database, AlertCircle, Download, Loader2 } from 'lucide-react'
 import { supabase, errMsg, fetchAll } from '../lib/supabase'
 import { downloadXlsx } from '../lib/excel'
-import { fmtDate, fmtDateTime, fmtDayIST, todayIST, STATUS, PAYMENT } from '../lib/format'
+import { fmtDate, fmtDateTime, fmtDayIST, todayIST, STATUS, payLabel } from '../lib/format'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { useAppSettings } from '../hooks/useData'
@@ -66,7 +66,7 @@ export default function SettingsPage() {
           Address: o.address || '', 'Pin Code': o.pin_code || '', 'Google Location': o.location_url || '',
           'Technician ID': o.technician?.tech_code || '', Technician: o.technician?.name || '', Status: STATUS[o.status]?.label || o.status,
           'Completed / Closed On': o.closed_at ? fmtDateTime(o.closed_at, { dateStyle: 'medium', timeStyle: 'short' }) : '',
-          Amount: Number(o.cod_amount || 0), Payment: PAYMENT[o.payment_mode] || '', 'Latest Comment': o.comments || '', Deleted: yes(o.is_deleted),
+          'Collected from customer': Number(o.cod_amount || 0), Payment: payLabel(o), 'Latest Comment': o.comments || '', Deleted: yes(o.is_deleted),
         })) },
         { name: 'Comments', rows: comments.map((c) => ({ 'Order ID': c.order?.order_id || '', Comment: c.comment, By: c.user?.name || '', 'Date/Time': fmtDateTime(c.created_at, { dateStyle: 'medium', timeStyle: 'short' }) })) },
         { name: 'Technicians', rows: techs.map((t) => ({

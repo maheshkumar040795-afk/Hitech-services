@@ -229,3 +229,14 @@ Only **ORDER ID** and **CUSTOMER NAME** are required. Download **Template** on t
 1. Google Sheet import: Edge Functions → Deploy new function → name **`fetch-sheet`** → paste `2-Supabase-Setup/functions/fetch-sheet/index.ts` → keep **Verify JWT on** → Deploy. (Without it the app still tries to read the sheet directly, but Google often refuses browsers.)
 2. Daily backup: follow `4-Daily-Backup/README.md` (about 5 minutes).
 3. Technician suggestion needs no setup and no SQL.
+
+## Update — Nov 2026 (5): one payment choice — Collected from customer, or Paid on Amazon
+
+No SQL to run.
+
+- **Cash / Online removed everywhere.** The customer always pays the technician (cash or UPI), so a completed job is either **Collected from customer** (with the amount) or **Paid on Amazon** (₹0). Older jobs saved as Cash or Online both show as Collected from customer.
+- **HT Jobs → Mark Completed:** *Collect from customer* (type the amount) or *Paid on Amazon*.
+- **Orders:** the amount column is **Collected ₹**; a completed order shows Collected / Amazon. Edit order (completed) has Payment and *Collected from customer ₹*.
+- **Technician Payout:** Earned (Rate Config) − Collected from customer = Net pay, per technician and per job. The "Online payment goes to" setting is gone: everything collected is deducted. Net ₹0 shows *settled, nothing to pay*.
+- **Payout Export:** sheet *Summary* (one line per technician with job counts, earned, collected, net pay, and a TOTAL line) and sheet *Job details* (every job with rate, payment, collected and net, with a TOTAL line under each technician).
+- **Orders → status Completed (office closes a job for a technician):** a popup asks *What was installed?* (Rate Config list) and *Payment* (Collected from customer + amount, or Paid on Amazon). The order is completed only after both are filled, so it always has a rate and the collection is deducted in Payout. Completing many selected orders at once is still one click: open each (pencil) to set the installed item and amount.
