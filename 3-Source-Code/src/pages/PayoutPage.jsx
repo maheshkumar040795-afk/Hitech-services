@@ -42,11 +42,12 @@ export default function PayoutPage() {
     queryFn: async () => {
       const fromIso = new Date(`${from}T00:00:00+05:30`).toISOString()
       const toIso = new Date(`${addDays(to, 1)}T00:00:00+05:30`).toISOString()
-      const [jobs, ratesRes] = await Promise.all([
-        fetchAll(() => supabase.from('orders')
-          .select('id, order_id, customer_name, service, pin_code, region, payout_rate, cod_amount, payment_mode, closed_at, technician_id')
+      const cols = 'id, order_id, customer_name, service, pin_code, region, payout_rate, cod_amount, payment_mode, closed_at, technician_id'
+      const load = (c) => fetchAll(() => supabase.from('orders').select(c)
           .eq('status', 'COMPLETED').eq('is_deleted', false).not('technician_id', 'is', null)
-          .gte('closed_at', fromIso).lt('closed_at', toIso).order('closed_at')),
+          .gte('closed_at', fromIso).lt('closed_at', toIso).order('closed_at'))
+      const [jobs, ratesRes] = await Promise.all([
+        load(cols + ', installed_item').catch((e) => { if (e?.code === '42703') return load(cols); throw e }),
         supabase.from('service_rates').select('service, rate_chennai, rate_outside'),
       ])
       if (ratesRes.error) throw ratesRes.error
@@ -60,13 +61,14 @@ export default function PayoutPage() {
     const byTech = new Map()
     for (const o of data.jobs) {
       const region = regionOf(o)
-      const cfg = rateMap.get(key(o.service))
+      const item = o.installed_item || o.service
+      const cfg = rateMap.get(key(item))
       const rate = o.payout_rate !== null && o.payout_rate !== undefined ? Number(o.payout_rate)
         : cfg ? (region === 'OUTSIDE' ? cfg.rate_outside : cfg.rate_chennai) : null
       const amt = Number(o.cod_amount || 0)
       const cash = o.payment_mode === 'CASH' || (!o.payment_mode && amt > 0) ? amt : 0
       const online = o.payment_mode === 'ONLINE' ? amt : 0
-      const job = { ...o, region, rate: rate === null || rate === undefined ? null : Number(rate), cash, online }
+      const job = { ...o, item, region, rate: rate === null || rate === undefined ? null : Number(rate), cash, online }
       const t = byTech.get(o.technician_id) || { id: o.technician_id, jobs: [] }
       t.jobs.push(job); byTech.set(o.technician_id, t)
     }
@@ -77,7 +79,7 @@ export default function PayoutPage() {
       const online = t.jobs.reduce((s, j) => s + j.online, 0)
       const deduct = cash + (onlineToTech ? online : 0)
       const svc = new Map()
-      t.jobs.forEach((j) => { const k = j.service || '—'; svc.set(k, (svc.get(k) || 0) + 1) })
+      t.jobs.forEach((j) => { const k = j.item || '—'; svc.set(k, (svc.get(k) || 0) + 1) })
       return {
         ...t, info, earned, cash, online, deduct, net: earned - deduct,
         amazon: t.jobs.filter((j) => j.payment_mode === 'AMAZON').length,
@@ -109,7 +111,7 @@ export default function PayoutPage() {
         Deducted: r.deduct, 'Net pay': r.net, 'Jobs without rate': r.missing,
       })) },
       { name: 'Jobs', rows: shown.flatMap((r) => r.jobs.map((j) => ({
-        Technician: techLabel(r.info), 'Completed On': fmtDayIST(j.closed_at), 'Order ID': j.order_id, Customer: j.customer_name, Service: j.service || '',
+        Technician: techLabel(r.info), 'Completed On': fmtDayIST(j.closed_at), 'Order ID': j.order_id, Customer: j.customer_name, 'Installed Item': j.installed_item || '', Service: j.service || '',
         Region: j.region === 'OUTSIDE' ? 'Outside Chennai' : 'Within Chennai', Rate: j.rate ?? 'Not set', Payment: PAYMENT[j.payment_mode] || '', Collected: Number(j.cod_amount || 0),
       }))) },
     ])
@@ -200,13 +202,13 @@ export default function PayoutPage() {
                         <td />
                         <td colSpan={8} className="px-4 pb-4 pt-1">
                           <table className="w-full text-xs bg-white rounded-xl border border-slate-200 overflow-hidden">
-                            <thead><tr className="bg-slate-50 text-slate-500">{['Completed', 'Order ID', 'Customer', 'Service', 'Region', 'Rate', 'Payment', 'Collected'].map((h) => <th key={h} className="px-3 py-2 text-left font-semibold">{h}</th>)}</tr></thead>
+                            <thead><tr className="bg-slate-50 text-slate-500">{['Completed', 'Order ID', 'Customer', 'Installed / Service', 'Region', 'Rate', 'Payment', 'Collected'].map((h) => <th key={h} className="px-3 py-2 text-left font-semibold">{h}</th>)}</tr></thead>
                             <tbody>{r.jobs.map((j) => (
                               <tr key={j.id} className="border-t border-slate-100">
                                 <td className="px-3 py-2 whitespace-nowrap">{fmtDayIST(j.closed_at)}</td>
                                 <td className="px-3 py-2 font-mono text-brand-600">{j.order_id}</td>
                                 <td className="px-3 py-2">{j.customer_name}</td>
-                                <td className="px-3 py-2">{j.service || '—'}</td>
+                                <td className="px-3 py-2">{j.item || '—'}{j.installed_item && j.service && j.installed_item !== j.service && <div className="text-[10px] text-slate-400">Order: {j.service}</div>}</td>
                                 <td className="px-3 py-2">{j.region === 'OUTSIDE' ? 'Outside Chennai' : 'Chennai'}</td>
                                 <td className="px-3 py-2 font-semibold">{j.rate === null ? <span className="text-amber-600">Not set</span> : fmtMoney(j.rate)}</td>
                                 <td className="px-3 py-2">{PAYMENT[j.payment_mode] || (Number(j.cod_amount) ? 'Cash' : '—')}</td>

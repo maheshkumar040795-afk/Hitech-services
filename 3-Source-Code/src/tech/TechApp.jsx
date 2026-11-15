@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Phone, MapPin, MessageCircle, ChevronRight, X, CheckCircle2, XCircle, Clock, RefreshCw, LogOut,
-  User, Lock, Send, Search, RotateCcw, Pencil, KeyRound, Wifi, WifiOff, CalendarDays, ClipboardList, CalendarClock, Banknote, Smartphone, BellRing, ShoppingBag,
+  User, Lock, Send, Search, RotateCcw, Pencil, KeyRound, Wifi, WifiOff, CalendarDays, ClipboardList, CalendarClock, Banknote, Smartphone, BellRing, ShoppingBag, Wrench,
 } from 'lucide-react'
 import { supabase, rpc, errMsg } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -26,7 +26,8 @@ const REASONS = [
 ]
 // Only what the phone shows (keeps mobile data and the free-plan download quota low)
 const JOB_FIELDS_V2 = 'id, order_id, order_date, rescheduled_date, customer_name, phone_no, service, brand, location, address, pin_code, location_url, status, comments, cod_amount, payment_mode, closed_at, assigned_at'
-const JOB_FIELDS = JOB_FIELDS_V2 + ', product_type'
+const JOB_FIELDS_V3 = JOB_FIELDS_V2 + ', product_type'
+const JOB_FIELDS = JOB_FIELDS_V3 + ', installed_item'
 const JOB_FIELDS_OLD = 'id, order_id, order_date, customer_name, phone_no, service, brand, location, address, pin_code, status, comments, cod_amount, closed_at, assigned_at'
 const HISTORY_SHORT = 3, HISTORY_LONG = 30   // days of Done / Not done jobs to download
 
@@ -57,58 +58,100 @@ function Sheet({ title, onClose, children, tall = false }) {
 // ── Complete / not-complete forms ─────────────────────────────────────────────
 function CompleteSheet({ job, onClose, onDone }) {
   const { toast } = useToast()
-  const [amount, setAmount] = useState(job.status === 'COMPLETED' ? String(Number(job.cod_amount)) : '')
-  const [mode, setMode] = useState(job.payment_mode || '')   // CASH | ONLINE | AMAZON
+  const done = job.status === 'COMPLETED'
+  // what was installed — list comes from Rate Config (names only)
+  const { data: items = [], isLoading: itemsLoading } = useQuery({
+    queryKey: ['install-items'], staleTime: 10 * 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('tech_install_items')
+      if (error) return []   // server not updated yet → no picker
+      return (data || []).map((r) => (typeof r === 'string' ? r : r.tech_install_items)).filter(Boolean)
+    },
+  })
+  const norm = (x) => (x || '').trim().toLowerCase()
+  const [item, setItem] = useState(job.installed_item || '')
+  useEffect(() => {
+    if (!item && items.length) { const m = items.find((i) => norm(i) === norm(job.service)); if (m) setItem(m) }
+  }, [items]) // eslint-disable-line react-hooks/exhaustive-deps
+  const [pay, setPay] = useState(job.payment_mode === 'AMAZON' ? 'AMAZON' : (job.payment_mode ? 'COLLECT' : ''))   // COLLECT | AMAZON
+  const [mode, setMode] = useState(job.payment_mode === 'CASH' || job.payment_mode === 'ONLINE' ? job.payment_mode : '')   // CASH | ONLINE
+  const [amount, setAmount] = useState(done && job.payment_mode !== 'AMAZON' && Number(job.cod_amount) > 0 ? String(Number(job.cod_amount)) : '')
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const submit = async (e) => {
     e.preventDefault()
-    const amazon = mode === 'AMAZON'
+    if (items.length && !item) return toast('Select what you installed', 'error')
+    if (!pay) return toast('Select Collect amount or Paid on Amazon', 'error')
+    const amazon = pay === 'AMAZON'
     const v = amazon ? 0 : parseFloat(amount)
-    if (!amazon && (amount === '' || isNaN(v) || v < 0)) return toast('Enter the amount collected (0 if none)', 'error')
-    if (v > 0 && !mode) return toast('Select Cash or Online', 'error')
+    if (!amazon && !mode) return toast('Select Cash or Online', 'error')
+    if (!amazon && (amount === '' || isNaN(v) || v <= 0)) return toast('Enter the amount collected', 'error')
     setBusy(true)
     try {
-      const args = { p_order: job.id, p_status: 'COMPLETED', p_amount: v, p_note: note || null }
-      try { await rpc('tech_update_job', { ...args, p_payment_mode: amazon ? 'AMAZON' : v > 0 ? mode : null }) }
-      catch (err) {   // server not updated yet → save without the payment mode
-        if (/p_payment_mode|schema cache|Could not find the function/i.test(err?.message || '')) await rpc('tech_update_job', args)
-        else throw err
+      const base = { p_order: job.id, p_status: 'COMPLETED', p_amount: v, p_note: note || null }
+      const withMode = { ...base, p_payment_mode: amazon ? 'AMAZON' : mode }
+      const old = (err) => /p_installed_item|p_payment_mode|schema cache|Could not find the function/i.test(err?.message || '')
+      try { await rpc('tech_update_job', item ? { ...withMode, p_installed_item: item } : withMode) }
+      catch (err) {   // server not updated yet → save what it understands
+        if (!old(err)) throw err
+        try { await rpc('tech_update_job', withMode) }
+        catch (err2) { if (old(err2)) await rpc('tech_update_job', base); else throw err2 }
       }
       navigator.vibrate?.(60)
-      toast(amazon ? 'Job completed · paid on Amazon' : `Job completed · ${fmtMoney(v)}${v > 0 ? ` ${mode === 'ONLINE' ? 'online' : 'cash'}` : ''}`, 'success')
+      toast(amazon ? 'Job completed · paid on Amazon' : `Job completed · ${fmtMoney(v)} ${mode === 'ONLINE' ? 'online' : 'cash'}`, 'success')
       onDone()
     } catch (err) { toast(errMsg(err), 'error') } finally { setBusy(false) }
   }
+  const choice = (on, active) => `rounded-2xl border-2 font-bold transition ${active ? on : 'border-slate-200 text-slate-600 active:bg-slate-50'}`
   return (
     <Sheet title="Mark job completed" onClose={onClose}>
       <form onSubmit={submit} className="p-5 space-y-5">
         <div className="text-sm text-slate-600"><b className="text-slate-900">{job.customer_name}</b> · {job.service}</div>
+
+        {(itemsLoading || items.length > 0) && (
+          <div>
+            <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 mb-2"><Wrench size={15} /> 1. What did you install?</label>
+            {itemsLoading ? <div className="h-12 rounded-2xl bg-slate-100 animate-pulse" /> : (
+              <div className="space-y-1.5 max-h-64 overflow-y-auto pr-0.5">
+                {items.map((i) => (
+                  <button key={i} type="button" onClick={() => setItem(i)}
+                    className={`w-full flex items-center gap-3 px-4 py-3 text-left text-sm ${choice('border-brand-500 bg-brand-50 text-brand-800', item === i)}`}>
+                    <span className={`w-5 h-5 shrink-0 rounded-full border-2 flex items-center justify-center ${item === i ? 'border-brand-600' : 'border-slate-300'}`}>
+                      {item === i && <span className="w-2.5 h-2.5 rounded-full bg-brand-600" />}</span>
+                    {i}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         <div>
-          <label className="block text-sm font-semibold text-slate-700 mb-2">Amount collected from customer</label>
-          <div className="flex items-center rounded-2xl border-2 border-slate-200 focus-within:border-emerald-500 overflow-hidden">
-            <span className="pl-4 text-2xl font-bold text-slate-400">₹</span>
-            <input autoFocus type="number" inputMode="decimal" min="0" step="0.01" placeholder="0"
-              disabled={mode === 'AMAZON'} className="flex-1 py-4 px-3 text-3xl font-bold outline-none bg-transparent disabled:text-slate-300" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          <label className="block text-sm font-semibold text-slate-700 mb-2">{items.length ? '2. ' : ''}Payment</label>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => setPay('COLLECT')}
+              className={`py-3.5 px-2 flex flex-col items-center gap-1 text-sm ${choice('border-emerald-500 bg-emerald-50 text-emerald-700', pay === 'COLLECT')}`}>
+              <Banknote size={22} /> Collect amount</button>
+            <button type="button" onClick={() => { setPay('AMAZON'); setMode('') }}
+              className={`py-3.5 px-2 flex flex-col items-center gap-1 text-sm ${choice('border-amber-500 bg-amber-50 text-amber-800', pay === 'AMAZON')}`}>
+              <ShoppingBag size={22} /> Paid on Amazon</button>
           </div>
-          <div className="flex gap-2 mt-2">
-            <button type="button" onClick={() => { setAmount('0'); setMode('') }} className="px-3 py-1.5 rounded-full bg-slate-100 text-xs font-semibold text-slate-600 active:bg-slate-200">No payment (₹0)</button>
-          </div>
-        </div>
-        <div>
-          <label className="block text-sm font-semibold text-slate-700 mb-2">Payment received by</label>
-          <div className="grid grid-cols-3 gap-2">
-            {[['CASH', 'Cash', Banknote, 'border-emerald-500 bg-emerald-50 text-emerald-700'], ['ONLINE', 'Online / UPI', Smartphone, 'border-violet-500 bg-violet-50 text-violet-700'],
-              ['AMAZON', 'Paid on Amazon', ShoppingBag, 'border-amber-500 bg-amber-50 text-amber-800']].map(([k, l, Icon, on]) => (
-              <button key={k} type="button" disabled={k !== 'AMAZON' && parseFloat(amount) === 0 && mode !== 'AMAZON'}
-                onClick={() => { if (k === 'AMAZON') setAmount('0'); else if (mode === 'AMAZON') setAmount(''); setMode(k) }}
-                className={`py-3.5 px-1 rounded-2xl border-2 flex flex-col items-center gap-1 text-sm font-bold leading-tight text-center transition disabled:opacity-40 ${mode === k ? on : 'border-slate-200 text-slate-600 active:bg-slate-50'}`}>
-                <Icon size={22} /> {l}
-              </button>
-            ))}
-          </div>
-          {mode === 'AMAZON' ? <p className="text-xs text-amber-700 mt-1.5">Customer already paid on Amazon — nothing collected (₹0).</p>
-            : parseFloat(amount) > 0 && !mode && <p className="text-xs text-amber-600 mt-1.5">Select Cash or Online</p>}
+          {pay === 'AMAZON' && <p className="text-xs text-amber-700 mt-1.5">Customer already paid on Amazon — nothing to collect (₹0).</p>}
+          {pay === 'COLLECT' && (
+            <div className="mt-3 space-y-3 rounded-2xl bg-slate-50 p-3">
+              <div className="grid grid-cols-2 gap-2">
+                {[['CASH', 'Cash', Banknote, 'border-emerald-500 bg-white text-emerald-700'], ['ONLINE', 'Online / UPI', Smartphone, 'border-violet-500 bg-white text-violet-700']].map(([k, l, Icon, on]) => (
+                  <button key={k} type="button" onClick={() => setMode(k)}
+                    className={`py-3 flex items-center justify-center gap-2 text-sm ${choice(on, mode === k)} ${mode === k ? '' : 'bg-white'}`}><Icon size={18} /> {l}</button>
+                ))}
+              </div>
+              <div className="flex items-center rounded-2xl border-2 border-slate-200 bg-white focus-within:border-emerald-500 overflow-hidden">
+                <span className="pl-4 text-2xl font-bold text-slate-400">₹</span>
+                <input type="number" inputMode="decimal" min="0" step="0.01" placeholder="Amount collected"
+                  className="flex-1 min-w-0 py-3.5 px-3 text-2xl font-bold outline-none bg-transparent placeholder:text-base placeholder:font-medium" value={amount} onChange={(e) => setAmount(e.target.value)} />
+              </div>
+            </div>
+          )}
         </div>
         <div>
           <label className="block text-sm font-semibold text-slate-700 mb-2">Note <span className="font-normal text-slate-400">(optional)</span></label>
@@ -219,6 +262,7 @@ function JobDetail({ job, onClose, refresh }) {
             {[
               ['Service', [job.service, job.brand].filter(Boolean).join(' · ') || '—'],
               ...(job.product_type ? [['Product type', job.product_type]] : []),
+              ...(job.installed_item ? [['Installed', job.installed_item]] : []),
               ['Phone', job.phone_no || '—'],
               ['Address', [job.address, job.location].filter(Boolean).join(', ') || '—'],
               ['Pin code', job.pin_code || '—'],
@@ -242,7 +286,7 @@ function JobDetail({ job, onClose, refresh }) {
             <div className="flex items-center gap-2 p-4 rounded-2xl bg-slate-50 text-sm text-slate-500"><Lock size={16} /> Closed on an earlier day. Call the office to change it.</div>
           ) : (
             <div className="grid grid-cols-2 gap-2">
-              {job.status === 'COMPLETED' && <button onClick={() => setAction('complete')} className="py-3 rounded-2xl border-2 border-slate-200 text-slate-700 font-semibold flex items-center justify-center gap-2 active:bg-slate-50"><Pencil size={16} /> Edit amount</button>}
+              {job.status === 'COMPLETED' && <button onClick={() => setAction('complete')} className="py-3 rounded-2xl border-2 border-slate-200 text-slate-700 font-semibold flex items-center justify-center gap-2 active:bg-slate-50"><Pencil size={16} /> Edit details</button>}
               <button onClick={reopen} className={`py-3 rounded-2xl border-2 border-slate-200 text-slate-700 font-semibold flex items-center justify-center gap-2 active:bg-slate-50 ${job.status !== 'COMPLETED' ? 'col-span-2' : ''}`}><RotateCcw size={16} /> Re-open</button>
             </div>
           )}
@@ -304,6 +348,7 @@ function JobCard({ job, onOpen, isNew }) {
             <p className="text-sm text-slate-600 truncate">{[job.service, job.brand].filter(Boolean).join(' · ')}</p>
             <p className="text-sm text-slate-500 truncate mt-0.5"><MapPin size={12} className="inline -mt-0.5" /> {[job.location, job.pin_code].filter(Boolean).join(' · ') || '—'}</p>
             {job.status === 'COMPLETED' && <p className="text-sm font-bold text-emerald-700 mt-1">{job.payment_mode === 'AMAZON' ? 'Paid on Amazon' : <>{fmtMoney(job.cod_amount)} collected{job.payment_mode ? ` · ${job.payment_mode === 'ONLINE' ? 'Online' : 'Cash'}` : ''}</>} <span className="font-medium text-slate-400">· {fmtDayIST(job.closed_at, { day: 'numeric', month: 'short' })}</span></p>}
+            {job.status === 'COMPLETED' && job.installed_item && <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1"><Wrench size={11} /> {job.installed_item}</p>}
           </div>
           <ChevronRight size={20} className="text-slate-300 mt-2 flex-shrink-0" />
         </div>
@@ -383,6 +428,7 @@ export default function TechApp() {
         .order('order_date', { ascending: true })
       let { data, error } = await run(JOB_FIELDS)
       // a newer column missing = database update not run yet → fall back to older field lists
+      if (error?.code === '42703') ({ data, error } = await run(JOB_FIELDS_V3))
       if (error?.code === '42703') ({ data, error } = await run(JOB_FIELDS_V2))
       if (error?.code === '42703') ({ data, error } = await run(JOB_FIELDS_OLD))
       if (error) throw error

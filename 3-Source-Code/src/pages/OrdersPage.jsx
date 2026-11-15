@@ -104,11 +104,15 @@ function OrderFormModal({ order, techs, onClose, onSaved }) {
     const base = { order_id: '', order_date: todayIST(), customer_name: '', phone_no: '', service: '', brand: '', product_type: '', location: '', address: '', pin_code: '', location_url: '', technician_id: '' }
     if (!order) return base
     const o = Object.fromEntries(ORDER_FIELDS.map((k) => [k, order[k] ?? '']))
-    return { ...base, ...o, cod_amount: order.cod_amount ?? 0, payment_mode: order.payment_mode || '', region: order.region || '' }
+    return { ...base, ...o, cod_amount: order.cod_amount ?? 0, payment_mode: order.payment_mode || '', region: order.region || '', installed_item: order.installed_item || '' }
   })
   const [busy, setBusy] = useState(false)
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }))
   const completed = order?.status === 'COMPLETED'
+  const { data: items = [] } = useQuery({
+    queryKey: ['service-rates-names'], enabled: completed, staleTime: 5 * 60_000,
+    queryFn: async () => { const { data } = await supabase.from('service_rates').select('service').order('service'); return (data || []).map((r) => r.service) },
+  })
   const save = async (e) => {
     e.preventDefault()
     const row = Object.fromEntries(ORDER_FIELDS.map((k) => [k, typeof f[k] === 'string' ? f[k].trim() || null : f[k]]))
@@ -119,6 +123,7 @@ function OrderFormModal({ order, techs, onClose, onSaved }) {
     if (completed) {
       row.cod_amount = Math.max(0, parseFloat(f.cod_amount) || 0)
       row.payment_mode = f.payment_mode === 'AMAZON' ? 'AMAZON' : row.cod_amount > 0 ? (f.payment_mode || null) : null
+      if ('installed_item' in order) row.installed_item = f.installed_item || null
     }
     setBusy(true)
     const { error } = editing
@@ -155,6 +160,11 @@ function OrderFormModal({ order, techs, onClose, onSaved }) {
           <TechPicker techs={techs} value={f.technician_id || ''} onChange={(v) => setF((p) => ({ ...p, technician_id: v }))}
             extra={[{ value: '', label: '— Unassigned —' }]} placeholder="— Unassigned —" className="w-full" /></Field></div>
         {completed && <>
+          {'installed_item' in order && <div className="sm:col-span-2"><Field label="Installed item" hint="What the technician installed — the rate in Rate Config is taken from this.">
+            <select className="input" value={f.installed_item} onChange={set('installed_item')}>
+              <option value="">— Same as service —</option>
+              {[...new Set([...(f.installed_item ? [f.installed_item] : []), ...items])].map((i) => <option key={i} value={i}>{i}</option>)}
+            </select></Field></div>}
           <Field label="Amount collected ₹"><input type="number" min="0" step="0.01" className="input" value={f.cod_amount} onChange={set('cod_amount')} /></Field>
           <Field label="Payment">
             <select className="input" value={f.payment_mode} onChange={set('payment_mode')}>
@@ -258,7 +268,7 @@ export default function OrdersPage() {
         DATE: fmtDate(o.order_date), SERVICE_ORDER_ID: o.order_id, 'CUSTOMER NAME': o.customer_name, 'PHONE NUMBER': o.phone_no || '',
         SERVICE: o.service || '', BRAND: o.brand || '', PRODUCT_TYPE: o.product_type || '', LOCATION: o.location || '', 'PIN CODE': o.pin_code || '',
         TECHNICIAN: o.technician?.name || '', STATUS: STATUS[o.status]?.label || o.status,
-        'Sheet Status': o.source_status || '', 'Technician ID': techs.find((t) => t.id === o.technician_id)?.tech_code || '',
+        'Sheet Status': o.source_status || '', 'Installed Item': o.installed_item || '', 'Technician ID': techs.find((t) => t.id === o.technician_id)?.tech_code || '',
         'Rescheduled To': o.rescheduled_date ? fmtDate(o.rescheduled_date) : '', Address: o.address || '', 'Google Location': o.location_url || '',
         'Completed On': o.status === 'COMPLETED' && o.closed_at ? fmtDayIST(o.closed_at) : '', 'Not Done On': o.status === 'REJECTED' && o.closed_at ? fmtDayIST(o.closed_at) : '',
         Amount: Number(o.cod_amount || 0), Payment: PAYMENT[o.payment_mode] || '', Comments: o.comments || '',
@@ -342,7 +352,7 @@ export default function OrdersPage() {
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
                 <th className="px-3 py-3 w-10"><input type="checkbox" checked={allSel} onChange={toggleAll} /></th>
-                {['Date', 'Service Order ID', 'Customer Name', 'Phone Number', 'Service', 'Brand', 'Product Type', 'Location', 'Pin Code', 'Technician', 'Status', 'Completed', 'Amount ₹', 'Comment', 'Modified', ''].map((h) => (
+                {['Date', 'Service Order ID', 'Customer Name', 'Phone Number', 'Service', 'Brand', 'Product Type', 'Location', 'Pin Code', 'Technician', 'Status', 'Completed / Installed', 'Amount ₹', 'Comment', 'Modified', ''].map((h) => (
                   <th key={h} className="px-3 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -387,6 +397,7 @@ export default function OrdersPage() {
                       {o.status === 'COMPLETED' && o.closed_at ? <span className="text-emerald-700 font-semibold" title={fmtDateTime(o.closed_at)}>{fmtDayIST(o.closed_at)}</span>
                         : o.status === 'REJECTED' && o.closed_at ? <span className="text-red-600" title={`Not done · ${fmtDateTime(o.closed_at)}`}>{fmtDayIST(o.closed_at)}</span>
                         : <span className="text-slate-300">—</span>}
+                      {o.installed_item && <div className="text-[10px] text-slate-500 max-w-[140px] whitespace-normal leading-tight mt-0.5" title="Installed">{o.installed_item}</div>}
                     </td>
                     <td className="px-3 py-2">
                       <input key={`${o.id}-${o.cod_amount}`} type="number" min="0" step="0.01" defaultValue={Number(o.cod_amount || 0)}

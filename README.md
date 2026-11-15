@@ -209,3 +209,12 @@ Only **ORDER ID** and **CUSTOMER NAME** are required. Download **Template** on t
 - **Template** (Orders → Template) now has the model columns: DATE, SERVICE_ORDER_ID, CUSTOMER NAME, PHONE NUMBER, SERVICE, BRAND, PRODUCT_TYPE, LOCATION, PIN CODE, TECHNICIAN, STATUS.
 - **Orders table, upload preview and Export** use the same column order. PRODUCT_TYPE is saved and shown (also in the order drawer and HT Jobs).
 - **STATUS from the sheet** is kept as written (shown as "Sheet: …" under the status) and mapped: COMPLETED / Physically completed → Completed, NOT_SERVICED → Pending, CANCELLED / REJECTED → Rejected.
+
+## Update — Nov 2026 (3): installed item + Collect amount / Paid on Amazon
+
+**Run once:** Supabase → SQL Editor → paste `2-Supabase-Setup/update-2026-11-installed-item.sql` → **Run**.
+
+- **HT Jobs → Mark Completed:** 1) *What did you install?* — pick from the Rate Config list (e.g. TV Installation (50 - 55 inch), Washing Machine Installation). 2) *Payment* — **Collect amount** (then Cash or Online/UPI + amount) or **Paid on Amazon** (₹0).
+- **Rate / payout** is taken from Rate Config for the **installed item** (Within/Outside Chennai), not the order's service text. If no item is picked, the service is used as before.
+- Office sees the installed item under *Completed* in Orders, in the order drawer, in Export (`Installed Item`) and in Technician Payout. Edit order (completed) → *Installed item* to correct it.
+- To add or rename items (e.g. "Refrigerator Installation"), edit the Rate Config list — technicians see the change next time they open the form.

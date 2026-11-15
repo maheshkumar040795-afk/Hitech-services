@@ -105,7 +105,7 @@ export default function RatesPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-heading font-extrabold text-slate-900">Rate Config</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Technician rate per job, by service — used for Technician Payout</p>
+          <p className="text-sm text-slate-500 mt-0.5">Technician rate per job, by service — used for Technician Payout. Technicians pick from this list (“What did you install?”) when they complete a job.</p>
         </div>
         <button onClick={applyToCompleted} disabled={busy} className="btn-secondary text-xs"><RefreshCw size={13} className={busy ? 'animate-spin' : ''} /> Apply rates to this month's completed jobs</button>
       </div>
