@@ -141,7 +141,7 @@ function OrderFormModal({ order, techs, onClose, onSaved }) {
     const base = { order_id: '', order_date: todayIST(), customer_name: '', phone_no: '', service: '', brand: '', product_type: '', location: '', address: '', pin_code: '', location_url: '', technician_id: '' }
     if (!order) return base
     const o = Object.fromEntries(ORDER_FIELDS.map((k) => [k, order[k] ?? '']))
-    return { ...base, ...o, cod_amount: order.cod_amount ?? 0, payment_mode: order.payment_mode === 'AMAZON' ? 'AMAZON' : Number(order.cod_amount) > 0 ? 'CASH' : '', region: order.region || '', installed_item: order.installed_item || '' }
+    return { ...base, ...o, collect_amount: order.collect_amount ?? '', cod_amount: order.cod_amount ?? 0, payment_mode: order.payment_mode === 'AMAZON' ? 'AMAZON' : Number(order.cod_amount) > 0 ? 'CASH' : '', region: order.region || '', installed_item: order.installed_item || '' }
   })
   const [busy, setBusy] = useState(false)
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }))
@@ -157,6 +157,8 @@ function OrderFormModal({ order, techs, onClose, onSaved }) {
     if (editing && !row.location_url && !order.location_url) delete row.location_url   // older database without the column
     if (!row.product_type && !(editing && 'product_type' in order)) delete row.product_type
     if (editing && 'region' in order && f.region) row.region = f.region
+    const cc = parseFloat(f.collect_amount)
+    if (!editing || 'collect_amount' in order) row.collect_amount = cc > 0 ? Math.round(cc * 100) / 100 : null
     if (completed) {
       row.cod_amount = Math.max(0, parseFloat(f.cod_amount) || 0)
       if (f.payment_mode === 'AMAZON') row.cod_amount = 0
@@ -164,9 +166,13 @@ function OrderFormModal({ order, techs, onClose, onSaved }) {
       if ('installed_item' in order) row.installed_item = f.installed_item || null
     }
     setBusy(true)
-    const { error } = editing
+    let { error } = editing
       ? await supabase.from('orders').update(row).eq('id', order.id)
       : await supabase.from('orders').insert(row)
+    if (error && /collect_amount/.test(error.message || '')) {   // database not updated yet
+      const { collect_amount, ...rest } = row
+      ;({ error } = editing ? await supabase.from('orders').update(rest).eq('id', order.id) : await supabase.from('orders').insert(rest))
+    }
     setBusy(false)
     if (error) return toast(error.code === '23505' ? 'This Order ID already exists' : errMsg(error), 'error')
     toast(editing ? 'Order updated' : 'Order added', 'success'); onSaved(); onClose()
@@ -193,6 +199,10 @@ function OrderFormModal({ order, techs, onClose, onSaved }) {
             <select className="input" value={f.region} onChange={set('region')}>
               <option value="CHENNAI">Within Chennai</option><option value="OUTSIDE">Outside Chennai</option>
             </select></Field></div>
+        )}
+        {(!editing || 'collect_amount' in order) && (
+          <div className="sm:col-span-2"><Field label="Cash Collect ₹" hint="Amount the technician must collect from the customer. When set, HT Jobs shows it on Complete and hides “Paid on Amazon”. Leave empty if paid on Amazon.">
+            <input type="number" min="0" step="0.01" inputMode="decimal" className="input" placeholder="e.g. 1000" value={f.collect_amount ?? ''} onChange={set('collect_amount')} /></Field></div>
         )}
         <div className="sm:col-span-2"><Field label="Assign Technician">
           <TechPicker techs={techs} value={f.technician_id || ''} onChange={(v) => setF((p) => ({ ...p, technician_id: v }))}
@@ -261,8 +271,9 @@ function CompleteModal({ order, techs, onClose, onSaved }) {
     if (!item && items.length) { const m = items.find((i) => norm(i) === norm(order.service)); if (m) setItem(m) }
   }, [items]) // eslint-disable-line react-hooks/exhaustive-deps
   const had = Number(order.cod_amount) > 0
-  const [pay, setPay] = useState(order.payment_mode === 'AMAZON' ? 'AMAZON' : had ? 'CASH' : '')
-  const [amount, setAmount] = useState(had ? String(Number(order.cod_amount)) : '')
+  const toCollect = Number(order.collect_amount) || 0
+  const [pay, setPay] = useState(toCollect > 0 ? 'CASH' : order.payment_mode === 'AMAZON' ? 'AMAZON' : had ? 'CASH' : '')
+  const [amount, setAmount] = useState(had ? String(Number(order.cod_amount)) : toCollect > 0 ? String(toCollect) : '')
   const [busy, setBusy] = useState(false)
   const tech = techs.find((t) => t.id === order.technician_id)
   const save = async (e) => {
@@ -300,10 +311,11 @@ function CompleteModal({ order, techs, onClose, onSaved }) {
             </select>
           ) : <p className="text-xs text-slate-500">No items in Rate Config yet. The rate will be taken from the order's service.</p>}
         </Field>
+        {toCollect > 0 && <p className="text-xs font-semibold text-red-800 bg-red-50 border border-red-200 rounded-xl p-2.5">Cash Collect on this order: ₹{toCollect} — the technician has to collect this from the customer (not paid on Amazon).</p>}
         <Field label="2. Payment *">
           <div className="flex gap-2">
             <button type="button" onClick={() => setPay('CASH')} className={opt(pay === 'CASH' ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-600 hover:border-slate-300')}>Collected from customer</button>
-            <button type="button" onClick={() => setPay('AMAZON')} className={opt(pay === 'AMAZON' ? 'border-amber-500 bg-amber-50 text-amber-800' : 'border-slate-200 text-slate-600 hover:border-slate-300')}>Paid on Amazon</button>
+            {!(toCollect > 0) && <button type="button" onClick={() => setPay('AMAZON')} className={opt(pay === 'AMAZON' ? 'border-amber-500 bg-amber-50 text-amber-800' : 'border-slate-200 text-slate-600 hover:border-slate-300')}>Paid on Amazon</button>}
           </div>
         </Field>
         {pay === 'CASH' && <Field label="Amount the technician collected ₹ *" hint="Cash or UPI received by the technician. It is deducted from his pay in Technician Payout.">
@@ -385,7 +397,7 @@ export default function OrdersPage() {
         'Sheet Status': o.source_status || '', 'Installed Item': o.installed_item || '', 'Technician ID': techs.find((t) => t.id === o.technician_id)?.tech_code || '',
         'Rescheduled To': o.rescheduled_date ? fmtDate(o.rescheduled_date) : '', Address: o.address || '', 'Google Location': o.location_url || '',
         'Completed On': o.status === 'COMPLETED' && o.closed_at ? fmtDayIST(o.closed_at) : '', 'Not Done On': o.status === 'REJECTED' && o.closed_at ? fmtDayIST(o.closed_at) : '',
-        'Collected from customer': Number(o.cod_amount || 0), Payment: payLabel(o), Comments: o.comments || '',
+        'Cash Collect': Number(o.collect_amount || 0), 'Collected from customer': Number(o.cod_amount || 0), Payment: payLabel(o), Comments: o.comments || '',
         'Modified By': o.modifier?.name || '', 'Modified At': o.modified_at ? fmtDateTime(o.modified_at) : '',
       })) }])
     } catch (e) { toast(errMsg(e), 'error') } finally { setBusy(false) }
@@ -475,16 +487,16 @@ export default function OrdersPage() {
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
                 <th className="px-3 py-3 w-10"><input type="checkbox" checked={allSel} onChange={toggleAll} /></th>
-                {['Date', 'Service Order ID', 'Customer Name', 'Phone Number', 'Service', 'Brand', 'Product Type', 'Location', 'Pin Code', 'Technician', 'Status', 'Completed / Installed', 'Collected ₹', 'Comment', 'Modified', ''].map((h) => (
+                {['Date', 'Service Order ID', 'Customer Name', 'Phone Number', 'Service', 'Brand', 'Product Type', 'Location', 'Pin Code', 'Cash Collect ₹', 'Technician', 'Status', 'Completed / Installed', 'Collected ₹', 'Comment', 'Modified', ''].map((h) => (
                   <th key={h} className="px-3 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {isLoading ? Array.from({ length: 6 }).map((_, i) => (
-                <tr key={i} className="border-b border-slate-50"><td colSpan={17} className="px-3 py-3"><div className="h-4 bg-slate-100 animate-pulse rounded" /></td></tr>
+                <tr key={i} className="border-b border-slate-50"><td colSpan={18} className="px-3 py-3"><div className="h-4 bg-slate-100 animate-pulse rounded" /></td></tr>
               )) : orders.length === 0 ? (
-                <tr><td colSpan={17} className="px-3 py-12 text-center text-sm text-slate-400">No orders found</td></tr>
+                <tr><td colSpan={18} className="px-3 py-12 text-center text-sm text-slate-400">No orders found</td></tr>
               ) : orders.map((o) => {
                 const sc = STATUS[o.status] || STATUS.PENDING
                 return (
@@ -500,6 +512,12 @@ export default function OrdersPage() {
                     <td className="px-3 py-2 text-[11px] text-slate-500 whitespace-nowrap">{o.product_type}</td>
                     <td className="px-3 py-2 text-xs text-slate-600">{o.location}{isUrl(o.location_url) && <a href={o.location_url} target="_blank" rel="noreferrer" title="Open Google location" className="ml-1 inline-flex align-middle text-emerald-600 hover:text-emerald-700"><MapPin size={12} /></a>}</td>
                     <td className="px-3 py-2 font-mono text-xs text-slate-400">{o.pin_code}</td>
+                    <td className="px-3 py-2">
+                      <input key={`cc-${o.id}-${o.collect_amount}`} type="number" min="0" step="0.01" placeholder="—" defaultValue={Number(o.collect_amount) > 0 ? Number(o.collect_amount) : ''}
+                        title="Amount the technician must collect from the customer (empty = paid on Amazon)" disabled={busy || !('collect_amount' in o)}
+                        className={`w-20 text-xs px-2 py-1 border rounded-lg text-right ${Number(o.collect_amount) > 0 ? 'border-red-300 bg-red-50 text-red-700 font-bold' : 'border-slate-200'}`}
+                        onBlur={(e) => { const v = Math.max(0, parseFloat(e.target.value) || 0); if (v !== (Number(o.collect_amount) || 0)) update([o.id], { collect_amount: v > 0 ? v : null }, v > 0 ? `${o.order_id}: collect ₹${v} from customer` : `${o.order_id}: cash collect cleared`) }} />
+                    </td>
                     <td className="px-3 py-2">
                       <TechPicker size="sm" techs={techs} value={o.technician_id || ''} disabled={busy} danger={!o.technician_id}
                         placeholder="Unassigned" extra={[{ value: '', label: 'Unassigned' }]} pinCode={o.pin_code}

@@ -27,7 +27,8 @@ const REASONS = [
 // Only what the phone shows (keeps mobile data and the free-plan download quota low)
 const JOB_FIELDS_V2 = 'id, order_id, order_date, rescheduled_date, customer_name, phone_no, service, brand, location, address, pin_code, location_url, status, comments, cod_amount, payment_mode, closed_at, assigned_at'
 const JOB_FIELDS_V3 = JOB_FIELDS_V2 + ', product_type'
-const JOB_FIELDS = JOB_FIELDS_V3 + ', installed_item'
+const JOB_FIELDS_V4 = JOB_FIELDS_V3 + ', installed_item'
+const JOB_FIELDS = JOB_FIELDS_V4 + ', collect_amount'
 const JOB_FIELDS_OLD = 'id, order_id, order_date, customer_name, phone_no, service, brand, location, address, pin_code, status, comments, cod_amount, closed_at, assigned_at'
 const HISTORY_SHORT = 3, HISTORY_LONG = 30   // days of Done / Not done jobs to download
 
@@ -73,15 +74,17 @@ function CompleteSheet({ job, onClose, onDone }) {
   useEffect(() => {
     if (!item && items.length) { const m = items.find((i) => norm(i) === norm(job.service)); if (m) setItem(m) }
   }, [items]) // eslint-disable-line react-hooks/exhaustive-deps
-  const [pay, setPay] = useState(job.payment_mode === 'AMAZON' ? 'AMAZON' : (job.payment_mode ? 'COLLECT' : ''))   // COLLECT | AMAZON
-  const [amount, setAmount] = useState(done && job.payment_mode !== 'AMAZON' && Number(job.cod_amount) > 0 ? String(Number(job.cod_amount)) : '')
+  // Office set a Cash Collect amount → technician must collect it; "Paid on Amazon" is not offered
+  const toCollect = Number(job.collect_amount) || 0
+  const [pay, setPay] = useState(toCollect > 0 ? 'COLLECT' : job.payment_mode === 'AMAZON' ? 'AMAZON' : (job.payment_mode ? 'COLLECT' : ''))   // COLLECT | AMAZON
+  const [amount, setAmount] = useState(done && job.payment_mode !== 'AMAZON' && Number(job.cod_amount) > 0 ? String(Number(job.cod_amount)) : toCollect > 0 ? String(toCollect) : '')
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const submit = async (e) => {
     e.preventDefault()
     if (items.length && !item) return toast('Select what you installed', 'error')
     if (!pay) return toast('Select Collect from customer or Paid on Amazon', 'error')
-    const amazon = pay === 'AMAZON'
+    const amazon = pay === 'AMAZON' && !(toCollect > 0)
     const v = amazon ? 0 : parseFloat(amount)
     if (!amazon && (amount === '' || isNaN(v) || v <= 0)) return toast('Enter the amount collected from the customer', 'error')
     setBusy(true)
@@ -106,6 +109,16 @@ function CompleteSheet({ job, onClose, onDone }) {
       <form onSubmit={submit} className="p-5 space-y-5">
         <div className="text-sm text-slate-600"><b className="text-slate-900">{job.customer_name}</b> · {job.service}</div>
 
+        {toCollect > 0 && (
+          <div className="rounded-2xl border-2 border-red-300 bg-red-50 p-4 flex items-start gap-3">
+            <Banknote size={28} className="text-red-600 flex-shrink-0" />
+            <div>
+              <p className="text-base font-bold text-red-800">You have to collect <span className="text-2xl">{fmtMoney(toCollect)}</span> from the customer</p>
+              <p className="text-xs text-red-700 mt-0.5">This order is not paid on Amazon. Collect the amount (cash or UPI) before you leave.</p>
+            </div>
+          </div>
+        )}
+
         {(itemsLoading || items.length > 0) && (
           <div>
             <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 mb-2"><Wrench size={15} /> 1. What did you install?</label>
@@ -126,13 +139,13 @@ function CompleteSheet({ job, onClose, onDone }) {
 
         <div>
           <label className="block text-sm font-semibold text-slate-700 mb-2">{items.length ? '2. ' : ''}Payment</label>
-          <div className="grid grid-cols-2 gap-2">
+          <div className={`grid gap-2 ${toCollect > 0 ? 'grid-cols-1' : 'grid-cols-2'}`}>
             <button type="button" onClick={() => setPay('COLLECT')}
               className={`py-3.5 px-2 flex flex-col items-center gap-1 text-sm ${choice('border-emerald-500 bg-emerald-50 text-emerald-700', pay === 'COLLECT')}`}>
               <Banknote size={22} /> Collect from customer</button>
-            <button type="button" onClick={() => setPay('AMAZON')}
+            {!(toCollect > 0) && <button type="button" onClick={() => setPay('AMAZON')}
               className={`py-3.5 px-2 flex flex-col items-center gap-1 text-sm ${choice('border-amber-500 bg-amber-50 text-amber-800', pay === 'AMAZON')}`}>
-              <ShoppingBag size={22} /> Paid on Amazon</button>
+              <ShoppingBag size={22} /> Paid on Amazon</button>}
           </div>
           {pay === 'AMAZON' && <p className="text-xs text-amber-700 mt-1.5">Customer already paid on Amazon — nothing to collect (₹0).</p>}
           {pay === 'COLLECT' && (
@@ -256,6 +269,7 @@ function JobDetail({ job, onClose, refresh }) {
               ['Service', [job.service, job.brand].filter(Boolean).join(' · ') || '—'],
               ...(job.product_type ? [['Product type', job.product_type]] : []),
               ...(job.installed_item ? [['Installed', job.installed_item]] : []),
+              ...(isOpen(job) && Number(job.collect_amount) > 0 ? [['Cash collect', <b key="c" className="text-red-700">{fmtMoney(job.collect_amount)} from customer</b>]] : []),
               ['Phone', job.phone_no || '—'],
               ['Address', [job.address, job.location].filter(Boolean).join(', ') || '—'],
               ['Pin code', job.pin_code || '—'],
@@ -340,6 +354,7 @@ function JobCard({ job, onOpen, isNew }) {
             <p className="text-[17px] font-bold text-slate-900 truncate">{job.customer_name}</p>
             <p className="text-sm text-slate-600 truncate">{[job.service, job.brand].filter(Boolean).join(' · ')}</p>
             <p className="text-sm text-slate-500 truncate mt-0.5"><MapPin size={12} className="inline -mt-0.5" /> {[job.location, job.pin_code].filter(Boolean).join(' · ') || '—'}</p>
+            {isOpen(job) && Number(job.collect_amount) > 0 && <p className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full bg-red-50 text-red-700 text-xs font-bold"><Banknote size={12} /> Collect {fmtMoney(job.collect_amount)}</p>}
             {job.status === 'COMPLETED' && <p className="text-sm font-bold text-emerald-700 mt-1">{job.payment_mode === 'AMAZON' ? 'Paid on Amazon' : <>{fmtMoney(job.cod_amount)} collected from customer</>} <span className="font-medium text-slate-400">· {fmtDayIST(job.closed_at, { day: 'numeric', month: 'short' })}</span></p>}
             {job.status === 'COMPLETED' && job.installed_item && <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1"><Wrench size={11} /> {job.installed_item}</p>}
           </div>
@@ -421,6 +436,7 @@ export default function TechApp() {
         .order('order_date', { ascending: true })
       let { data, error } = await run(JOB_FIELDS)
       // a newer column missing = database update not run yet → fall back to older field lists
+      if (error?.code === '42703') ({ data, error } = await run(JOB_FIELDS_V4))
       if (error?.code === '42703') ({ data, error } = await run(JOB_FIELDS_V3))
       if (error?.code === '42703') ({ data, error } = await run(JOB_FIELDS_V2))
       if (error?.code === '42703') ({ data, error } = await run(JOB_FIELDS_OLD))

@@ -81,7 +81,7 @@ export default function OrderDrawer({ orderId, onClose }) {
                 ['Phone', o.phone_no || '—'], ['Service', o.service || '—'],
                 ['Brand', o.brand || '—'], ['Product Type', o.product_type || '—'], ...(o.installed_item ? [['Installed', o.installed_item]] : []), ['Pin Code', o.pin_code || '—'],
                 ['Location', o.location || '—'], ['Address', o.address || '—'],
-                ['Technician', techLabel(o.technician) || 'Unassigned'], ['Payment', o.payment_mode === 'AMAZON' ? PAYMENT.AMAZON : `${fmtMoney(o.cod_amount)} collected from customer`],
+                ['Technician', techLabel(o.technician) || 'Unassigned'], ['Cash Collect', Number(o.collect_amount) > 0 ? fmtMoney(o.collect_amount) : '—'], ['Payment', o.payment_mode === 'AMAZON' ? PAYMENT.AMAZON : `${fmtMoney(o.cod_amount)} collected from customer`],
                 ['Assigned By', o.assigner?.name ? `${o.assigner.name}${o.assigned_at ? ' · ' + fmtDateTime(o.assigned_at) : ''}` : '—'],
                 ['Last Modified', o.modifier?.name ? `${o.modifier.name} · ${fmtDateTime(o.modified_at)}` : '—'],
               ].map(([l, v]) => (
