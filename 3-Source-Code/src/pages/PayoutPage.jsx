@@ -1,19 +1,23 @@
 import { Fragment, useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Download, ChevronDown, ChevronRight, AlertTriangle, Wallet, Search } from 'lucide-react'
+import { Download, ChevronDown, ChevronRight, AlertTriangle, Wallet, Search, CheckCircle2, Undo2 } from 'lucide-react'
 import { supabase, errMsg, fetchAll } from '../lib/supabase'
 import { todayIST, addDays, fmtDate, fmtMoney, fmtDayIST, payLabel } from '../lib/format'
 import { downloadXlsx } from '../lib/excel'
 import { useTechnicians } from '../hooks/useData'
 import TechPicker from '../components/TechPicker'
+import { useAuth } from '../context/AuthContext'
+import { useToast } from '../context/ToastContext'
 
 const QUICK = [
   ['today', 'Today', () => [todayIST(), todayIST()]],
   ['yday', 'Yesterday', () => [addDays(todayIST(), -1), addDays(todayIST(), -1)]],
   ['week', 'Last 7 days', () => [addDays(todayIST(), -6), todayIST()]],
   ['month', 'This month', () => [todayIST().slice(0, 8) + '01', todayIST()]],
+  ['lastmonth', 'Last month', () => { const first = todayIST().slice(0, 8) + '01'; const end = addDays(first, -1); return [end.slice(0, 8) + '01', end] }],
 ]
+const monthName = (d) => fmtDate(d, { month: 'long', year: 'numeric' })
 const key = (s) => String(s || '').trim().toLowerCase()
 const regionOf = (o) => o.region || (!o.pin_code || String(o.pin_code).trim().startsWith('600') ? 'CHENNAI' : 'OUTSIDE')
 
@@ -31,6 +35,40 @@ export default function PayoutPage() {
   const [tech, setTech] = useState('')
   const [q, setQ] = useState('')
   const [open, setOpen] = useState(() => new Set())
+  const { isAdmin, user } = useAuth()
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  // A single calendar month is picked (1st → any day of the same month) → salary can be marked as paid
+  const month = from.endsWith('-01') && from.slice(0, 7) === to.slice(0, 7) ? from : null
+  const { data: paidRows, isError: paidMissing } = useQuery({
+    queryKey: ['salary-paid', month], enabled: !!month, retry: false,
+    queryFn: async () => { const { data, error } = await supabase.from('salary_payments').select('*').eq('month', month); if (error) throw error; return data },
+  })
+  const paidBy = useMemo(() => new Map((paidRows || []).map((p) => [p.technician_id, p])), [paidRows])
+  const [saving, setSaving] = useState(null)
+  const markPaid = async (r) => {
+    if (!confirm(`Mark ${monthName(month)} salary of ${r.info.name} as paid?\n\nEarned ${fmtMoney(r.earned)} − collected ${fmtMoney(r.collected)} = ${fmtMoney(r.net)}`)) return
+    setSaving(r.id)
+    const { error } = await supabase.from('salary_payments').upsert({ technician_id: r.id, month, earned: r.earned, collected: r.collected, amount: r.net, paid_at: new Date().toISOString(), paid_by: user?.id || null }, { onConflict: 'technician_id,month' })
+    setSaving(null)
+    if (error) return toast(errMsg(error), 'error')
+    toast(`${r.info.name}: ${monthName(month)} salary marked as paid`, 'success'); qc.invalidateQueries({ queryKey: ['salary-paid'] })
+  }
+  const undoPaid = async (r) => {
+    if (!confirm(`Undo "paid" for ${r.info.name} (${monthName(month)})?`)) return
+    setSaving(r.id)
+    const { error } = await supabase.from('salary_payments').delete().eq('technician_id', r.id).eq('month', month)
+    setSaving(null)
+    if (error) return toast(errMsg(error), 'error')
+    toast('Marked as not paid', 'success'); qc.invalidateQueries({ queryKey: ['salary-paid'] })
+  }
+  const showSalary = !!month && !paidMissing
+  const salaryInfo = (r) => {
+    const p = paidBy.get(r.id)
+    if (!p) return { paid: null, balance: r.net, label: 'Not paid' }
+    const balance = Math.round((r.net - Number(p.amount)) * 100) / 100
+    return { paid: p, balance, label: balance === 0 ? `Paid ${fmtDayIST(p.paid_at)}` : `Paid ${fmtMoney(p.amount)} ${fmtDayIST(p.paid_at)} · balance ${fmtMoney(balance)}` }
+  }
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['payout', from, to],
@@ -99,7 +137,7 @@ export default function PayoutPage() {
     const summary = shown.map((r, i) => ({
       'S.No': i + 1, Period: period, 'Technician ID': r.info.tech_code || '', Technician: r.info.name, Mobile: r.info.mobile || '',
       'Jobs completed': r.jobs.length, 'Jobs: collected from customer': r.collectedJobs, 'Jobs: paid on Amazon': r.amazon, 'Jobs without rate': r.missing,
-      'Earned (Rate Config) ₹': r.earned, 'Collected from customer ₹': r.collected, 'Net pay ₹': r.net, Result: result(r.net), Services: r.services,
+      'Earned (Rate Config) ₹': r.earned, 'Collected from customer ₹': r.collected, 'Net pay ₹': r.net, Result: result(r.net), ...(showSalary ? { 'Salary status': salaryInfo(r).label } : {}), Services: r.services,
     }))
     if (shown.length > 1) summary.push({
       'S.No': '', Period: period, 'Technician ID': '', Technician: 'TOTAL', Mobile: '',
@@ -165,6 +203,8 @@ export default function PayoutPage() {
           extra={[{ value: '', label: 'All technicians' }]} />
       </div>
 
+      {month && paidMissing && <div className="card p-3 text-sm text-amber-900 bg-amber-50/70 border-amber-300/70 flex items-center gap-2"><AlertTriangle size={15} /> To mark salaries as paid, run <b>update-2026-11-salary-paid.sql</b> in Supabase → SQL Editor.</div>}
+      {!month && isAdmin && <p className="text-xs text-slate-500">To mark a salary as paid, pick one month (e.g. <b>Last month</b>).</p>}
       {tot.missing > 0 && (
         <div className="card p-3 border-amber-300/70 bg-amber-50/70 text-sm text-amber-900 flex flex-wrap items-center gap-2">
           <AlertTriangle size={15} /> {tot.missing} job{tot.missing > 1 ? 's have' : ' has'} no rate (counted as ₹0).
@@ -175,10 +215,10 @@ export default function PayoutPage() {
       <div className="card p-0 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead><tr>{['', 'Technician', 'Jobs', 'Services', 'Earned', 'Collected from customer', 'Paid on Amazon', 'Net pay'].map((h) => <th key={h} className="th whitespace-nowrap">{h}</th>)}</tr></thead>
+            <thead><tr>{['', 'Technician', 'Jobs', 'Services', 'Earned', 'Collected from customer', 'Paid on Amazon', 'Net pay', ...(showSalary ? [`Salary · ${monthName(month)}`] : [])].map((h) => <th key={h} className="th whitespace-nowrap">{h}</th>)}</tr></thead>
             <tbody>
-              {isLoading ? <tr><td colSpan={8} className="px-4 py-10 text-center text-sm text-slate-400">Loading…</td></tr>
-                : !shown.length ? <tr><td colSpan={8} className="px-4 py-10 text-center text-sm text-slate-400">No completed jobs in this period</td></tr>
+              {isLoading ? <tr><td colSpan={showSalary ? 9 : 8} className="px-4 py-10 text-center text-sm text-slate-400">Loading…</td></tr>
+                : !shown.length ? <tr><td colSpan={showSalary ? 9 : 8} className="px-4 py-10 text-center text-sm text-slate-400">No completed jobs in this period</td></tr>
                 : shown.map((r) => (
                   <Fragment key={r.id}>
                     <tr className="table-row cursor-pointer" onClick={() => toggle(r.id)}>
@@ -193,11 +233,20 @@ export default function PayoutPage() {
                         <span className={`text-[15px] font-heading font-extrabold tabular-nums ${r.net < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{fmtMoney(Math.abs(r.net))}</span>
                         <span className="block text-[10px] text-slate-400">{r.net < 0 ? 'technician owes office' : r.net === 0 ? 'settled, nothing to pay' : 'pay technician'}</span>
                       </td>
+                      {showSalary && (() => { const si = salaryInfo(r); return (
+                        <td className="td whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                          {si.paid && <span className="flex items-center gap-1 text-xs font-bold text-emerald-700"><CheckCircle2 size={14} /> {si.label}</span>}
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            {isAdmin && (!si.paid || si.balance !== 0) && <button disabled={saving === r.id} onClick={() => markPaid(r)} className="btn-primary text-[11px] py-1 px-2.5">{saving === r.id ? 'Saving…' : si.paid ? 'Mark balance paid' : 'Mark as paid'}</button>}
+                            {isAdmin && si.paid && <button disabled={saving === r.id} onClick={() => undoPaid(r)} title="Undo paid" className="text-[11px] text-slate-400 hover:text-red-600 flex items-center gap-0.5"><Undo2 size={12} /> Undo</button>}
+                            {!isAdmin && !si.paid && <span className="text-xs text-slate-400">Not paid</span>}
+                          </div>
+                        </td>) })()}
                     </tr>
                     {open.has(r.id) && (
                       <tr className="bg-slate-50/70">
                         <td />
-                        <td colSpan={7} className="px-4 pb-4 pt-1">
+                        <td colSpan={showSalary ? 8 : 7} className="px-4 pb-4 pt-1">
                           <table className="w-full text-xs bg-white rounded-xl border border-slate-200 overflow-hidden">
                             <thead><tr className="bg-slate-50 text-slate-500">{['Completed', 'Order ID', 'Customer', 'Installed / Service', 'Region', 'Payment', 'Rate', 'Collected', 'Net'].map((h) => <th key={h} className="px-3 py-2 text-left font-semibold">{h}</th>)}</tr></thead>
                             <tbody>{r.jobs.map((j) => (
@@ -226,6 +275,7 @@ export default function PayoutPage() {
                   <td /><td className="td">Total</td><td className="td tabular-nums">{tot.jobs}</td><td />
                   <td className="td tabular-nums">{fmtMoney(tot.earned)}</td><td className="td tabular-nums">− {fmtMoney(tot.collected)}</td><td className="td tabular-nums">{tot.amazon ? `${tot.amazon} job${tot.amazon > 1 ? 's' : ''}` : '—'}</td>
                   <td className="td tabular-nums">{fmtMoney(tot.net)}</td>
+                  {showSalary && <td className="td text-xs text-slate-500">{shown.filter((r) => paidBy.has(r.id) && salaryInfo(r).balance === 0).length} / {shown.length} paid</td>}
                 </tr>
               )}
             </tbody>

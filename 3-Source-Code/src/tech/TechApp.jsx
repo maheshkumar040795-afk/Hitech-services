@@ -406,6 +406,31 @@ function AccountSheet({ onClose }) {
   )
 }
 
+// ── Salary card (header) ──────────────────────────────────────────────────────
+function SalaryCard({ label, m, current }) {
+  const month = m?.month ? fmtDate(m.month, { month: 'short', year: 'numeric' }) : ''
+  const day = Number(todayIST().slice(8, 10))
+  const paid = m && m.paid !== null && m.paid !== undefined
+  const net = m ? (paid ? Number(m.balance) : Number(m.net)) : 0
+  return (
+    <div className="glass-dark rounded-2xl px-3 py-2.5">
+      <p className="text-[10px] font-semibold text-slate-300/90 uppercase tracking-wide">{label}</p>
+      <p className="text-[11px] text-slate-400 -mt-0.5">{month}{month && (current ? ` · 1 – ${day}` : '')}</p>
+      {!m ? <div className="h-12 mt-1 rounded-lg bg-white/10 animate-pulse" /> : <>
+        <div className="mt-1 space-y-0.5 text-[11px] tabular-nums">
+          <div className="flex justify-between"><span className="text-slate-300">Earned</span><span className="font-semibold text-white">{fmtMoney(m.earned)}</span></div>
+          <div className="flex justify-between"><span className="text-slate-300">Collected</span><span className="font-semibold text-amber-300">− {fmtMoney(m.collected)}</span></div>
+          {paid && <div className="flex justify-between"><span className="text-slate-300">Paid</span><span className="font-semibold text-emerald-300">− {fmtMoney(m.paid)}</span></div>}
+        </div>
+        <div className="mt-1.5 pt-1.5 border-t border-white/10">
+          <p className={`text-lg font-heading font-extrabold tabular-nums leading-none ${net < 0 ? 'text-red-300' : 'text-emerald-300'}`}>{net < 0 ? `− ${fmtMoney(-net)}` : fmtMoney(net)}</p>
+          <p className="text-[10px] text-slate-300/90 mt-0.5">{paid && net === 0 ? `Salary paid ✓ ${fmtDayIST(m.paid_at, { day: 'numeric', month: 'short' })}` : net < 0 ? 'You owe office' : 'Net salary'}</p>
+        </div>
+      </>}
+    </div>
+  )
+}
+
 // ── Main screen ───────────────────────────────────────────────────────────────
 export default function TechApp() {
   const { user, technician } = useAuth()
@@ -481,8 +506,13 @@ export default function TechApp() {
   }, [refresh])
 
   const pending = jobs.filter(isOpen)
-  const doneToday = jobs.filter((j) => j.status === 'COMPLETED' && isTodayIST(j.closed_at))
-  const collectedToday = doneToday.reduce((s, j) => s + Number(j.cod_amount || 0), 0)
+
+  // Salary: previous month + current month (Earned − Collected = Net), worked out on the server
+  const { data: salary, isError: salaryMissing } = useQuery({
+    queryKey: ['my-salary', technician?.id], enabled: !!technician, staleTime: 30_000, retry: false,
+    queryFn: async () => { const { data, error } = await supabase.rpc('tech_salary_summary'); if (error) throw error; return data },
+  })
+  useEffect(() => { qc.invalidateQueries({ queryKey: ['my-salary'] }) }, [jobs, qc])   // job completed → totals update
 
   const list = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -522,11 +552,11 @@ export default function TechApp() {
             <button onClick={() => setShowAccount(true)} className="w-10 h-10 rounded-full flex items-center justify-center active:bg-white/10"><User size={20} /></button>
           </div>
         </div>
-        <div className="relative grid grid-cols-3 gap-2 px-4 pb-3.5">
-          {[['Pending', pending.length, 'text-amber-300'], ['Done today', doneToday.length, 'text-emerald-300'], ['Collected today', fmtMoney(collectedToday), 'text-white']].map(([l, v, c]) => (
-            <div key={l} className="glass-dark rounded-2xl px-3 py-2.5"><p className={`text-xl font-heading font-extrabold tabular-nums ${c}`}>{v}</p><p className="text-[10px] font-medium text-slate-300/90">{l}</p></div>
-          ))}
-        </div>
+        {!salaryMissing && (
+          <div className="relative grid grid-cols-2 gap-2 px-4 pb-3.5">
+            {[['prev', 'Previous month'], ['cur', 'Current month']].map(([k, label]) => <SalaryCard key={k} label={label} m={salary?.[k]} current={k === 'cur'} />)}
+          </div>
+        )}
         <div className="relative flex bg-white text-slate-500 rounded-t-3xl">
           {TABS.map(([k, l, n]) => (
             <button key={k} onClick={() => setTab(k)} className={`flex-1 py-3.5 text-sm font-semibold border-b-[3px] transition-colors ${tab === k ? 'border-brand-600 text-brand-700' : 'border-transparent'}`}>
