@@ -334,6 +334,23 @@ function StatusPill({ status }) {
   return <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${m[1]}`}><Icon size={13} /> {m[0]}</span>
 }
 
+/** Done tab: job is closed — no customer details, cannot be opened. Only date, installed item and cash collected. */
+function DoneCard({ job }) {
+  const amazon = job.payment_mode === 'AMAZON'
+  return (
+    <div className="bg-white rounded-3xl border border-slate-200/70 shadow-soft px-4 py-3.5 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 text-sm font-bold text-emerald-700"><CheckCircle2 size={16} /> Completed</span>
+        <span className="text-xs font-semibold text-slate-500">{fmtDayIST(job.closed_at, { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+      </div>
+      <div className="flex items-start gap-2 text-[15px] text-slate-800"><Wrench size={15} className="text-slate-400 mt-1 flex-shrink-0" /><span className="font-semibold">{job.installed_item || job.service || '—'}</span></div>
+      <div className="flex items-center gap-2 text-sm"><Banknote size={15} className="text-slate-400 flex-shrink-0" />
+        {amazon ? <span className="font-semibold text-amber-700">Paid on Amazon · nothing collected</span>
+          : <span><b className="text-slate-900">{fmtMoney(job.cod_amount)}</b> <span className="text-slate-500">cash collected</span></span>}</div>
+    </div>
+  )
+}
+
 function JobCard({ job, onOpen, isNew }) {
   const tel = telUrl(job.phone_no)
   const overdue = isOpen(job) && visitDate(job) < todayIST()
@@ -519,11 +536,11 @@ export default function TechApp() {
     let l = jobs.filter((j) => (tab === 'PENDING' ? isOpen(j) : j.status === tab))
     if (tab !== 'PENDING') l = [...l].sort((a, b) => String(b.closed_at).localeCompare(String(a.closed_at)))
     else l = [...l].sort((a, b) => (newIds.has(b.id) - newIds.has(a.id)) || visitDate(a).localeCompare(visitDate(b)))
-    if (q) l = l.filter((j) => [j.customer_name, j.order_id, j.location, j.pin_code, j.phone_no].some((v) => v?.toLowerCase().includes(q)))
+    if (q) l = l.filter((j) => (j.status === 'COMPLETED' ? [j.installed_item, j.service] : [j.customer_name, j.order_id, j.location, j.pin_code, j.phone_no]).some((v) => v?.toLowerCase().includes(q)))
     return l
   }, [jobs, tab, search, newIds])
 
-  const open = jobs.find((j) => j.id === openId)
+  const open = jobs.find((j) => j.id === openId && j.status !== 'COMPLETED')   // completed jobs cannot be reopened
   const openJob = (id) => { setOpenId(id); setNewIds((p) => { const s = new Set(p); s.delete(id); return s }) }
 
   if (!technician) {
@@ -585,7 +602,7 @@ export default function TechApp() {
         {jobs.length > 6 && (
           <div className="relative">
             <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input className="w-full rounded-2xl bg-white border border-slate-200 pl-11 pr-4 py-3 text-base outline-none focus:border-brand-500" placeholder="Search name, area, pincode…" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <input className="w-full rounded-2xl bg-white border border-slate-200 pl-11 pr-4 py-3 text-base outline-none focus:border-brand-500" placeholder={tab === 'COMPLETED' ? 'Search installed item…' : 'Search name, area, pincode…'} value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
         )}
         {error && <div className="rounded-2xl bg-red-50 border border-red-200 p-4 text-sm text-red-700">{errMsg(error)} <button onClick={() => refetch()} className="underline font-semibold ml-1">Retry</button></div>}
@@ -596,7 +613,7 @@ export default function TechApp() {
               <p className="font-semibold text-slate-700">{search ? 'No matching jobs' : tab === 'PENDING' ? 'No pending jobs' : `Nothing here in the last ${historyDays} days`}</p>
               {tab === 'PENDING' && !search && <p className="text-sm text-slate-500 mt-1">New jobs appear here automatically when the office assigns them.</p>}
             </div>
-          ) : list.map((j) => <JobCard key={j.id} job={j} isNew={newIds.has(j.id)} onOpen={() => openJob(j.id)} />)}
+          ) : list.map((j) => j.status === 'COMPLETED' ? <DoneCard key={j.id} job={j} /> : <JobCard key={j.id} job={j} isNew={newIds.has(j.id)} onOpen={() => openJob(j.id)} />)}
         {tab !== 'PENDING' && !isLoading && historyDays === HISTORY_SHORT && (
           <button onClick={() => setHistoryDays(HISTORY_LONG)} className="w-full py-3 rounded-2xl border-2 border-dashed border-slate-300 text-sm font-semibold text-slate-600 active:bg-white">
             Showing last {HISTORY_SHORT} days · Show last {HISTORY_LONG} days
