@@ -45,7 +45,10 @@ export const STATUS = {
   COMPLETED: { label: 'Completed', badge: 'badge-completed', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
   REJECTED:  { label: 'Rejected',  badge: 'badge-rejected',  bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200' },
   RESCHEDULED: { label: 'Rescheduled', badge: 'badge-rescheduled', bg: 'bg-sky-50', text: 'text-sky-700', border: 'border-sky-200' },
+  CANCELLED: { label: 'Cancelled', badge: 'badge-cancelled', bg: 'bg-slate-100', text: 'text-slate-600', border: 'border-slate-300' },
 }
+/** Cancelled order = the owner installed it himself; shown in place of the technician */
+export const OWN_INSTALL = 'Own Installation'
 /** Statuses that still need a visit */
 export const OPEN_STATUSES = ['PENDING', 'RESCHEDULED']
 // Payment on a completed job: the technician either collected the amount from the customer, or the customer paid on Amazon.

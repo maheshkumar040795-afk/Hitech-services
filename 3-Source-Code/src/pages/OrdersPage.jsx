@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
-import { Search, Upload, Download, Eye, MessageSquare, X, ChevronLeft, ChevronRight, Plus, FileDown, Trash2, AlertTriangle, CheckCircle2, Pencil, MapPin, CalendarClock, Save, Sheet, Loader2 } from 'lucide-react'
+import { Search, Upload, Download, Eye, MessageSquare, X, ChevronLeft, ChevronRight, Plus, FileDown, Trash2, AlertTriangle, CheckCircle2, Pencil, MapPin, CalendarClock, Save, Sheet, Loader2, Home } from 'lucide-react'
 import { supabase, rpc, errMsg, fetchAll, safeSearch, fetchSheetViaFunction } from '../lib/supabase'
-import { fmtDate, fmtDateTime, fmtDayIST, STATUS, PAYMENT, payLabel, todayIST, techLabel, isUrl } from '../lib/format'
+import { fmtDate, fmtDateTime, fmtDayIST, STATUS, PAYMENT, payLabel, todayIST, techLabel, isUrl, OWN_INSTALL } from '../lib/format'
 import { parseOrdersFile, parseOrdersBuffer, fetchGoogleSheet, downloadOrdersTemplate, downloadXlsx } from '../lib/excel'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
@@ -53,10 +53,11 @@ function UploadModal({ file, parsed, onClose, onDone }) {
           </div>
           <div className="overflow-x-auto border border-slate-200 rounded-xl mb-4">
             <table className="w-full text-[11px]">
-              <thead className="bg-slate-50"><tr>{['DATE', 'SERVICE ORDER ID', 'CUSTOMER NAME', 'SERVICE', 'PRODUCT TYPE', 'LOCATION', 'TECHNICIAN', 'STATUS'].map((h) => <th key={h} className="px-2 py-1.5 text-left text-slate-500 whitespace-nowrap">{h}</th>)}</tr></thead>
+              <thead className="bg-slate-50"><tr>{['DATE', 'STATE', 'VENDOR NAME', 'SERVICE ORDER ID', 'CUSTOMER NAME', 'SERVICE', 'PRODUCT TYPE', 'LOCATION', 'TECHNICIAN', 'STATUS'].map((h) => <th key={h} className="px-2 py-1.5 text-left text-slate-500 whitespace-nowrap">{h}</th>)}</tr></thead>
               <tbody>{preview.map((r, i) => (
                 <tr key={i} className="border-t border-slate-100">
                   <td className="px-2 py-1.5">{r.order_date ? fmtDate(r.order_date) : <span className="text-amber-600">today</span>}</td>
+                  <td className="px-2 py-1.5">{r.state || '—'}</td><td className="px-2 py-1.5">{r.vendor_name || '—'}</td>
                   <td className="px-2 py-1.5 font-mono">{r.order_id}</td><td className="px-2 py-1.5">{r.customer_name}</td>
                   <td className="px-2 py-1.5">{r.service}</td><td className="px-2 py-1.5">{r.product_type || '—'}</td>
                   <td className="px-2 py-1.5">{r.location}</td><td className="px-2 py-1.5">{r.technician || '—'}</td><td className="px-2 py-1.5">{r.status || 'Pending'}</td>
@@ -131,14 +132,14 @@ function GoogleSheetModal({ onClose, onParsed }) {
   )
 }
 
-const ORDER_FIELDS = ['order_id', 'order_date', 'customer_name', 'phone_no', 'service', 'brand', 'product_type', 'location', 'address', 'pin_code', 'location_url', 'technician_id']
+const ORDER_FIELDS = ['order_id', 'order_date', 'state', 'vendor_name', 'customer_name', 'phone_no', 'service', 'brand', 'product_type', 'location', 'address', 'pin_code', 'location_url', 'technician_id']
 
 /** Add a new order, or edit an existing one to fill in missed details */
 function OrderFormModal({ order, techs, onClose, onSaved }) {
   const { toast } = useToast()
   const editing = !!order
   const [f, setF] = useState(() => {
-    const base = { order_id: '', order_date: todayIST(), customer_name: '', phone_no: '', service: '', brand: '', product_type: '', location: '', address: '', pin_code: '', location_url: '', technician_id: '' }
+    const base = { order_id: '', order_date: todayIST(), state: '', vendor_name: '', customer_name: '', phone_no: '', service: '', brand: '', product_type: '', location: '', address: '', pin_code: '', location_url: '', technician_id: '' }
     if (!order) return base
     const o = Object.fromEntries(ORDER_FIELDS.map((k) => [k, order[k] ?? '']))
     return { ...base, ...o, collect_amount: order.collect_amount ?? '', cod_amount: order.cod_amount ?? 0, payment_mode: order.payment_mode === 'AMAZON' ? 'AMAZON' : Number(order.cod_amount) > 0 ? 'CASH' : '', region: order.region || '', installed_item: order.installed_item || '' }
@@ -156,6 +157,8 @@ function OrderFormModal({ order, techs, onClose, onSaved }) {
     if (row.location_url && !isUrl(row.location_url)) return toast('Google location must be a link starting with https://', 'error')
     if (editing && !row.location_url && !order.location_url) delete row.location_url   // older database without the column
     if (!row.product_type && !(editing && 'product_type' in order)) delete row.product_type
+    for (const k of ['state', 'vendor_name']) if (!row[k] && !(editing && k in order)) delete row[k]   // older database without the columns
+    if (order?.status === 'CANCELLED') delete row.technician_id   // cancelled = own installation, no technician
     if (editing && 'region' in order && f.region) row.region = f.region
     const cc = parseFloat(f.collect_amount)
     if (!editing || 'collect_amount' in order) row.collect_amount = cc > 0 ? Math.round(cc * 100) / 100 : null
@@ -182,6 +185,8 @@ function OrderFormModal({ order, techs, onClose, onSaved }) {
       <form onSubmit={save} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Order ID *"><input className="input" value={f.order_id} onChange={set('order_id')} required /></Field>
         <Field label="Order Date *"><input type="date" className="input" value={f.order_date} onChange={set('order_date')} required /></Field>
+        <Field label="State"><input className="input" value={f.state || ''} onChange={set('state')} placeholder="Tamil Nadu" /></Field>
+        <Field label="Vendor Name"><input className="input" value={f.vendor_name || ''} onChange={set('vendor_name')} placeholder="Amazon" /></Field>
         <Field label="Customer Name *"><input className="input" value={f.customer_name} onChange={set('customer_name')} required /></Field>
         <Field label="Phone"><input className="input" inputMode="tel" value={f.phone_no} onChange={set('phone_no')} /></Field>
         <Field label="Service"><input className="input" value={f.service} onChange={set('service')} placeholder="AC Installation Service" /></Field>
@@ -205,8 +210,9 @@ function OrderFormModal({ order, techs, onClose, onSaved }) {
             <input type="number" min="0" step="0.01" inputMode="decimal" className="input" placeholder="e.g. 1000" value={f.collect_amount ?? ''} onChange={set('collect_amount')} /></Field></div>
         )}
         <div className="sm:col-span-2"><Field label="Assign Technician">
+          {order?.status === 'CANCELLED' ? <p className="input bg-slate-50 text-slate-600 flex items-center gap-2"><Home size={14} /> {OWN_INSTALL} (order cancelled)</p> :
           <TechPicker techs={techs} value={f.technician_id || ''} onChange={(v) => setF((p) => ({ ...p, technician_id: v }))}
-            extra={[{ value: '', label: '— Unassigned —' }]} placeholder="— Unassigned —" className="w-full" pinCode={f.pin_code} /></Field></div>
+            extra={[{ value: '', label: '— Unassigned —' }]} placeholder="— Unassigned —" className="w-full" pinCode={f.pin_code} />}</Field></div>
         {completed && <>
           {'installed_item' in order && <div className="sm:col-span-2"><Field label="Installed item" hint="What the technician installed — the rate in Rate Config is taken from this.">
             <select className="input" value={f.installed_item} onChange={set('installed_item')}>
@@ -380,6 +386,18 @@ export default function OrdersPage() {
     refresh()
   }
 
+  // Cancelled = the owner installed it himself → the technician is removed and "Own Installation" is shown
+  const cancelOrders = async (list) => {
+    if (!list.length) return
+    const withTech = list.filter((o) => o.technician_id).length
+    const msg = list.length === 1
+      ? `Cancel ${list[0].order_id}? It will show as "${OWN_INSTALL}"${withTech ? ' and be removed from the technician\'s HT Jobs and Payout' : ''}.`
+      : `Cancel ${list.length} orders? They will show as "${OWN_INSTALL}"${withTech ? ` and ${withTech} will be removed from the technicians' HT Jobs and Payout` : ''}.`
+    if (!confirm(msg)) return
+    await update(list.map((o) => o.id), { status: 'CANCELLED', technician_id: null },
+      list.length === 1 ? `${list[0].order_id} → Cancelled · ${OWN_INSTALL}` : `${list.length} orders → Cancelled · ${OWN_INSTALL}`)
+  }
+
   const onFile = async (e) => {
     const file = e.target.files?.[0]; e.target.value = ''
     if (!file) return
@@ -391,12 +409,12 @@ export default function OrdersPage() {
     try {
       const rows = await fetchAll(() => applyFilters(supabase.from('orders').select(SELECT), f).order('order_date', { ascending: false }))
       downloadXlsx(`hitech-orders-${todayIST()}.xlsx`, [{ name: 'Orders', rows: rows.map((o) => ({
-        DATE: fmtDate(o.order_date), SERVICE_ORDER_ID: o.order_id, 'CUSTOMER NAME': o.customer_name, 'PHONE NUMBER': o.phone_no || '',
+        DATE: fmtDate(o.order_date), STATE: o.state || '', 'VENDOR NAME': o.vendor_name || '', SERVICE_ORDER_ID: o.order_id, 'CUSTOMER NAME': o.customer_name, 'PHONE NUMBER': o.phone_no || '',
         SERVICE: o.service || '', BRAND: o.brand || '', PRODUCT_TYPE: o.product_type || '', LOCATION: o.location || '', 'PIN CODE': o.pin_code || '',
-        TECHNICIAN: o.technician?.name || '', STATUS: STATUS[o.status]?.label || o.status,
+        TECHNICIAN: o.status === 'CANCELLED' ? OWN_INSTALL : o.technician?.name || '', STATUS: STATUS[o.status]?.label || o.status,
         'Sheet Status': o.source_status || '', 'Installed Item': o.installed_item || '', 'Technician ID': techs.find((t) => t.id === o.technician_id)?.tech_code || '',
         'Rescheduled To': o.rescheduled_date ? fmtDate(o.rescheduled_date) : '', Address: o.address || '', 'Google Location': o.location_url || '',
-        'Completed On': o.status === 'COMPLETED' && o.closed_at ? fmtDayIST(o.closed_at) : '', 'Not Done On': o.status === 'REJECTED' && o.closed_at ? fmtDayIST(o.closed_at) : '',
+        'Completed On': o.status === 'COMPLETED' && o.closed_at ? fmtDayIST(o.closed_at) : '', 'Not Done On': o.status === 'REJECTED' && o.closed_at ? fmtDayIST(o.closed_at) : '', 'Cancelled On': o.status === 'CANCELLED' && o.closed_at ? fmtDayIST(o.closed_at) : '',
         'Cash Collect': Number(o.collect_amount || 0), 'Collected from customer': Number(o.cod_amount || 0), Payment: payLabel(o), Comments: o.comments || '',
         'Modified By': o.modifier?.name || '', 'Modified At': o.modified_at ? fmtDateTime(o.modified_at) : '',
       })) }])
@@ -442,7 +460,7 @@ export default function OrdersPage() {
           <input className="input pl-9 py-2" placeholder="Search order ID, customer, phone, location, pincode…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
         </div>
         <select className="input w-auto py-2" value={f.status} onChange={setFilter('status')}>
-          <option value="">All statuses</option><option value="PENDING">Pending</option><option value="RESCHEDULED">Rescheduled</option><option value="COMPLETED">Completed</option><option value="REJECTED">Rejected</option>
+          <option value="">All statuses</option><option value="PENDING">Pending</option><option value="RESCHEDULED">Rescheduled</option><option value="COMPLETED">Completed</option><option value="REJECTED">Rejected</option><option value="CANCELLED">Cancelled (own installation)</option>
         </select>
         <TechPicker techs={techs} value={f.tech} activeOnly={false} showLoad={false} placeholder="All technicians" className="w-auto min-w-[180px]"
           extra={[{ value: '', label: 'All technicians' }, { value: 'none', label: '⚠ Unassigned' }]}
@@ -471,6 +489,8 @@ export default function OrdersPage() {
             }}
               className={`text-xs font-semibold px-3 py-1.5 rounded-lg border ${STATUS[s].bg} ${STATUS[s].text} ${STATUS[s].border}`}>→ {STATUS[s].label}</button>
           ))}
+          <button disabled={busy} onClick={() => cancelOrders(orders.filter((o) => selected.has(o.id))).then(() => setSelected(new Set()))}
+            className={`text-xs font-semibold px-3 py-1.5 rounded-lg border ${STATUS.CANCELLED.bg} ${STATUS.CANCELLED.text} ${STATUS.CANCELLED.border}`}>→ Cancelled</button>
           <button disabled={busy} onClick={() => setResched(orders.filter((o) => selected.has(o.id)))}
             className={`text-xs font-semibold px-3 py-1.5 rounded-lg border ${STATUS.RESCHEDULED.bg} ${STATUS.RESCHEDULED.text} ${STATUS.RESCHEDULED.border}`}>→ Reschedule…</button>
           {isAdmin && <button disabled={busy} className="btn-danger text-xs py-1.5" onClick={() => {
@@ -487,16 +507,16 @@ export default function OrdersPage() {
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
                 <th className="px-3 py-3 w-10"><input type="checkbox" checked={allSel} onChange={toggleAll} /></th>
-                {['Date', 'Service Order ID', 'Customer Name', 'Phone Number', 'Service', 'Brand', 'Product Type', 'Location', 'Pin Code', 'Cash Collect ₹', 'Technician', 'Status', 'Completed / Installed', 'Collected ₹', 'Comment', 'Modified', ''].map((h) => (
+                {['Date', 'State', 'Vendor Name', 'Service Order ID', 'Customer Name', 'Phone Number', 'Service', 'Brand', 'Product Type', 'Location', 'Pin Code', 'Cash Collect ₹', 'Technician', 'Status', 'Completed / Installed', 'Collected ₹', 'Comment', 'Modified', ''].map((h) => (
                   <th key={h} className="px-3 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {isLoading ? Array.from({ length: 6 }).map((_, i) => (
-                <tr key={i} className="border-b border-slate-50"><td colSpan={18} className="px-3 py-3"><div className="h-4 bg-slate-100 animate-pulse rounded" /></td></tr>
+                <tr key={i} className="border-b border-slate-50"><td colSpan={20} className="px-3 py-3"><div className="h-4 bg-slate-100 animate-pulse rounded" /></td></tr>
               )) : orders.length === 0 ? (
-                <tr><td colSpan={18} className="px-3 py-12 text-center text-sm text-slate-400">No orders found</td></tr>
+                <tr><td colSpan={20} className="px-3 py-12 text-center text-sm text-slate-400">No orders found</td></tr>
               ) : orders.map((o) => {
                 const sc = STATUS[o.status] || STATUS.PENDING
                 return (
@@ -504,6 +524,8 @@ export default function OrdersPage() {
                     <td className="px-3 py-2"><input type="checkbox" checked={selected.has(o.id)} onChange={() => toggle(o.id)} /></td>
                     <td className="px-3 py-2 whitespace-nowrap text-[11px] text-slate-600">{fmtDate(o.order_date)}
                       {o.rescheduled_date && <div className="text-[10px] font-semibold text-sky-700 flex items-center gap-0.5" title="Rescheduled to"><CalendarClock size={10} /> {fmtDate(o.rescheduled_date)}</div>}</td>
+                    <td className="px-3 py-2 text-xs text-slate-600 whitespace-nowrap">{o.state || <span className="text-slate-300">—</span>}</td>
+                    <td className="px-3 py-2 text-xs text-slate-600 whitespace-nowrap">{o.vendor_name || <span className="text-slate-300">—</span>}</td>
                     <td className="px-3 py-2 whitespace-nowrap"><button onClick={() => setDetailId(o.id)} className="font-mono text-xs text-brand-600 font-semibold hover:underline">{o.order_id}</button></td>
                     <td className="px-3 py-2 text-xs font-semibold text-slate-800 whitespace-nowrap">{o.customer_name}</td>
                     <td className="px-3 py-2 font-mono text-[11px] text-slate-500">{o.phone_no}</td>
@@ -519,17 +541,20 @@ export default function OrdersPage() {
                         onBlur={(e) => { const v = Math.max(0, parseFloat(e.target.value) || 0); if (v !== (Number(o.collect_amount) || 0)) update([o.id], { collect_amount: v > 0 ? v : null }, v > 0 ? `${o.order_id}: collect ₹${v} from customer` : `${o.order_id}: cash collect cleared`) }} />
                     </td>
                     <td className="px-3 py-2">
-                      <TechPicker size="sm" techs={techs} value={o.technician_id || ''} disabled={busy} danger={!o.technician_id}
+                      {o.status === 'CANCELLED' ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-300 whitespace-nowrap" title="Order cancelled: the owner installed it himself">
+                          <Home size={11} /> {OWN_INSTALL}</span>
+                      ) : <TechPicker size="sm" techs={techs} value={o.technician_id || ''} disabled={busy} danger={!o.technician_id}
                         placeholder="Unassigned" extra={[{ value: '', label: 'Unassigned' }]} pinCode={o.pin_code}
                         onChange={(v) => {
                           const t = techs.find((x) => x.id === v)
                           update([o.id], { technician_id: v || null }, t ? `${o.order_id} assigned to ${techLabel(t)}` : `${o.order_id} unassigned`)
-                        }} />
+                        }} />}
                     </td>
                     <td className="px-3 py-2">
-                      <select value={o.status} disabled={busy} onChange={(e) => e.target.value === 'RESCHEDULED' ? setResched([o]) : e.target.value === 'COMPLETED' ? setCompleting(o) : update([o.id], { status: e.target.value }, `${o.order_id} → ${STATUS[e.target.value].label}`)}
+                      <select value={o.status} disabled={busy} onChange={(e) => e.target.value === 'RESCHEDULED' ? setResched([o]) : e.target.value === 'COMPLETED' ? setCompleting(o) : e.target.value === 'CANCELLED' ? cancelOrders([o]) : update([o.id], { status: e.target.value }, `${o.order_id} → ${STATUS[e.target.value].label}`)}
                         className={`text-[10px] font-semibold px-2 py-1 rounded-lg border ${sc.bg} ${sc.text} ${sc.border}`}>
-                        <option value="PENDING">Pending</option><option value="RESCHEDULED">Rescheduled</option><option value="COMPLETED">Completed</option><option value="REJECTED">Rejected</option>
+                        <option value="PENDING">Pending</option><option value="RESCHEDULED">Rescheduled</option><option value="COMPLETED">Completed</option><option value="REJECTED">Rejected</option><option value="CANCELLED">Cancelled</option>
                       </select>
                       {o.source_status && o.source_status.toUpperCase() !== o.status && <div className="text-[10px] text-slate-400 mt-0.5 whitespace-nowrap" title="STATUS in the uploaded sheet">Sheet: {o.source_status}</div>}
                       {o.status === 'RESCHEDULED' && <button onClick={() => setResched([o])} className="block mt-0.5 text-[10px] font-semibold text-sky-700 hover:underline whitespace-nowrap">to {fmtDate(o.rescheduled_date)} · change</button>}
@@ -537,6 +562,7 @@ export default function OrdersPage() {
                     <td className="px-3 py-2 whitespace-nowrap text-[11px]">
                       {o.status === 'COMPLETED' && o.closed_at ? <span className="text-emerald-700 font-semibold" title={fmtDateTime(o.closed_at)}>{fmtDayIST(o.closed_at)}</span>
                         : o.status === 'REJECTED' && o.closed_at ? <span className="text-red-600" title={`Not done · ${fmtDateTime(o.closed_at)}`}>{fmtDayIST(o.closed_at)}</span>
+                        : o.status === 'CANCELLED' && o.closed_at ? <span className="text-slate-500" title={`Cancelled · ${fmtDateTime(o.closed_at)}`}>{fmtDayIST(o.closed_at)}</span>
                         : <span className="text-slate-300">—</span>}
                       {o.installed_item && <div className="text-[10px] text-slate-500 max-w-[140px] whitespace-normal leading-tight mt-0.5" title="Installed">{o.installed_item}</div>}
                     </td>

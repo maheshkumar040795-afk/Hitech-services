@@ -240,3 +240,12 @@ No SQL to run.
 - **Technician Payout:** Earned (Rate Config) − Collected from customer = Net pay, per technician and per job. The "Online payment goes to" setting is gone: everything collected is deducted. Net ₹0 shows *settled, nothing to pay*.
 - **Payout Export:** sheet *Summary* (one line per technician with job counts, earned, collected, net pay, and a TOTAL line) and sheet *Job details* (every job with rate, payment, collected and net, with a TOTAL line under each technician).
 - **Orders → status Completed (office closes a job for a technician):** a popup asks *What was installed?* (Rate Config list) and *Payment* (Collected from customer + amount, or Paid on Amazon). The order is completed only after both are filled, so it always has a rate and the collection is deducted in Payout. Completing many selected orders at once is still one click: open each (pencil) to set the installed item and amount.
+
+## Update — Nov 2026 (6): Cancelled status (Own Installation) + STATE and VENDOR NAME columns
+
+**Run once:** Supabase → SQL Editor → paste `2-Supabase-Setup/update-2026-11-cancel-state-vendor.sql` → **Run**.
+
+- **Orders → Status → Cancelled** (row dropdown, or select orders → *→ Cancelled*): for orders the owner installed himself. After a confirm, the technician is removed, the Technician column shows **Own Installation**, and the job leaves that technician's HT Jobs and Technician Payout. The Audit Log keeps which technician it was taken from. Set the status back to Pending to assign a technician again.
+- **Status filter** has *Cancelled (own installation)*. Export, Reports and the order drawer show *Own Installation* as the technician; Export has a *Cancelled On* column.
+- **New columns STATE and VENDOR NAME**, right after DATE, in the Template, Upload Excel / Google Sheet (and preview), the Orders table, Export, Reports export, the order drawer and New / Edit order. Upload headers accepted: `STATE`; `VENDOR NAME` / `VENDOR` / `SELLER NAME`.
+- Sheet STATUS `CANCELLED` still imports as **Rejected** (unchanged).

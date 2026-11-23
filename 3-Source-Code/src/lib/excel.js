@@ -3,6 +3,8 @@ import * as XLSX from 'xlsx'
 // Header name (any case / spacing) → field. First match wins.
 const FIELD_ALIASES = {
   order_date:    ['DATE', 'ORDERDATE'],
+  state:         ['STATE'],
+  vendor_name:   ['VENDORNAME', 'VENDOR', 'SELLERNAME', 'SELLER'],
   order_id:      ['SERVICEORDERID', 'SERVICEORDERNO', 'ORDERID', 'ORDERNO', 'ORDERNUMBER'],
   customer_name: ['CUSTOMERNAME', 'CUSTOMER', 'NAME'],
   phone_no:      ['PHONENO', 'PHONE', 'MOBILE', 'MOBILENO', 'CONTACT', 'PHONENUMBER'],
@@ -95,17 +97,17 @@ export function downloadXlsx(filename, sheets) {
 }
 
 /** Order sheet columns — same order as the Hi-Tech model sheet (upload, template and export) */
-export const ORDER_SHEET_COLUMNS = ['DATE', 'SERVICE_ORDER_ID', 'CUSTOMER NAME', 'PHONE NUMBER', 'SERVICE', 'BRAND', 'PRODUCT_TYPE', 'LOCATION', 'PIN CODE', 'TECHNICIAN', 'STATUS']
+export const ORDER_SHEET_COLUMNS = ['DATE', 'STATE', 'VENDOR NAME', 'SERVICE_ORDER_ID', 'CUSTOMER NAME', 'PHONE NUMBER', 'SERVICE', 'BRAND', 'PRODUCT_TYPE', 'LOCATION', 'PIN CODE', 'TECHNICIAN', 'STATUS']
 
 export function downloadOrdersTemplate() {
   const wb = XLSX.utils.book_new()
   const ws = XLSX.utils.aoa_to_sheet([
     ORDER_SHEET_COLUMNS,
-    ['11/2/2026', '404-2330510-9169150', 'Suresh', '9585986893', 'TV Installation Service (PP)', 'PHILIPS', 'TELEVISION', 'TIRUNELVELI', '627102', 'Azar', 'NOT_SERVICED'],
-    ['11/2/2026', '403-5405966-8456307', 'Sathiyaraj', '9698787620', 'TV Installation Service (PP)', 'PHILIPS', 'TELEVISION', 'ARIYALUR', '612903', 'Karthikeyan J', 'COMPLETED'],
-    ['11/2/2026', '171-4273629-9033140', 'Gokulsendrayan', '6380241141', 'TV Installation Service', 'Visio World', 'TELEVISION', 'ERODE', '638504', 'Kavinesh', 'Physically completed'],
+    ['11/2/2026', 'Tamil Nadu', 'Amazon', '404-2330510-9169150', 'Suresh', '9585986893', 'TV Installation Service (PP)', 'PHILIPS', 'TELEVISION', 'TIRUNELVELI', '627102', 'Azar', 'NOT_SERVICED'],
+    ['11/2/2026', 'Tamil Nadu', 'Amazon', '403-5405966-8456307', 'Sathiyaraj', '9698787620', 'TV Installation Service (PP)', 'PHILIPS', 'TELEVISION', 'ARIYALUR', '612903', 'Karthikeyan J', 'COMPLETED'],
+    ['11/2/2026', 'Tamil Nadu', 'Amazon', '171-4273629-9033140', 'Gokulsendrayan', '6380241141', 'TV Installation Service', 'Visio World', 'TELEVISION', 'ERODE', '638504', 'Kavinesh', 'Physically completed'],
   ])
-  ws['!cols'] = [12, 22, 18, 14, 30, 14, 14, 16, 10, 16, 20].map((wch) => ({ wch }))
+  ws['!cols'] = [12, 14, 18, 22, 18, 14, 30, 14, 14, 16, 10, 16, 20].map((wch) => ({ wch }))
   XLSX.utils.book_append_sheet(wb, ws, 'Orders')
   XLSX.writeFile(wb, 'hitech-orders-template.xlsx')
 }

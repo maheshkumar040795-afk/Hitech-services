@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, Phone, MapPin, Send, History, MessageSquare } from 'lucide-react'
 import { supabase, errMsg } from '../lib/supabase'
-import { fmtDate, fmtDateTime, fmtDayIST, fmtMoney, STATUS, PAYMENT, mapsUrl, telUrl, techLabel, isUrl } from '../lib/format'
+import { fmtDate, fmtDateTime, fmtDayIST, fmtMoney, STATUS, PAYMENT, mapsUrl, telUrl, techLabel, isUrl, OWN_INSTALL } from '../lib/format'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 
@@ -72,16 +72,16 @@ export default function OrderDrawer({ orderId, onClose }) {
             <div className="flex items-center gap-2 flex-wrap">
               <span className={st.badge}>{st.label}</span>
               {o.status === 'RESCHEDULED' && o.rescheduled_date && <span className="text-[11px] font-semibold text-sky-700">to {fmtDate(o.rescheduled_date)}</span>}
-              {o.closed_at && <span className="text-[11px] text-slate-400">{o.status === 'COMPLETED' ? 'completed' : 'closed'} {fmtDateTime(o.closed_at)}</span>}
+              {o.closed_at && <span className="text-[11px] text-slate-400">{o.status === 'COMPLETED' ? 'completed' : o.status === 'CANCELLED' ? 'cancelled' : 'closed'} {fmtDateTime(o.closed_at)}</span>}
             </div>
             <div className="grid grid-cols-2 gap-4">
               {[
-                ['Order Date', fmtDate(o.order_date)], ['Rescheduled To', o.rescheduled_date ? fmtDate(o.rescheduled_date) : '—'],
+                ['Order Date', fmtDate(o.order_date)], ['State', o.state || '—'], ['Vendor Name', o.vendor_name || '—'], ['Rescheduled To', o.rescheduled_date ? fmtDate(o.rescheduled_date) : '—'],
                 ['Completed On', o.status === 'COMPLETED' && o.closed_at ? fmtDayIST(o.closed_at) : '—'], ['Customer', o.customer_name],
                 ['Phone', o.phone_no || '—'], ['Service', o.service || '—'],
                 ['Brand', o.brand || '—'], ['Product Type', o.product_type || '—'], ...(o.installed_item ? [['Installed', o.installed_item]] : []), ['Pin Code', o.pin_code || '—'],
                 ['Location', o.location || '—'], ['Address', o.address || '—'],
-                ['Technician', techLabel(o.technician) || 'Unassigned'], ['Cash Collect', Number(o.collect_amount) > 0 ? fmtMoney(o.collect_amount) : '—'], ['Payment', o.payment_mode === 'AMAZON' ? PAYMENT.AMAZON : `${fmtMoney(o.cod_amount)} collected from customer`],
+                ['Technician', o.status === 'CANCELLED' ? OWN_INSTALL : techLabel(o.technician) || 'Unassigned'], ['Cash Collect', Number(o.collect_amount) > 0 ? fmtMoney(o.collect_amount) : '—'], ['Payment', o.payment_mode === 'AMAZON' ? PAYMENT.AMAZON : `${fmtMoney(o.cod_amount)} collected from customer`],
                 ['Assigned By', o.assigner?.name ? `${o.assigner.name}${o.assigned_at ? ' · ' + fmtDateTime(o.assigned_at) : ''}` : '—'],
                 ['Last Modified', o.modifier?.name ? `${o.modifier.name} · ${fmtDateTime(o.modified_at)}` : '—'],
               ].map(([l, v]) => (
