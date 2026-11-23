@@ -212,7 +212,7 @@ function OrderFormModal({ order, techs, onClose, onSaved }) {
         <div className="sm:col-span-2"><Field label="Assign Technician">
           {order?.status === 'CANCELLED' ? <p className="input bg-slate-50 text-slate-600 flex items-center gap-2"><Home size={14} /> {OWN_INSTALL} (order cancelled)</p> :
           <TechPicker techs={techs} value={f.technician_id || ''} onChange={(v) => setF((p) => ({ ...p, technician_id: v }))}
-            extra={[{ value: '', label: '— Unassigned —' }]} placeholder="— Unassigned —" className="w-full" pinCode={f.pin_code} />}</Field></div>
+            extra={[{ value: '', label: '— Unassigned —' }]} placeholder="— Unassigned —" className="w-full" pinCode={f.pin_code} location={f.location} />}</Field></div>
         {completed && <>
           {'installed_item' in order && <div className="sm:col-span-2"><Field label="Installed item" hint="What the technician installed — the rate in Rate Config is taken from this.">
             <select className="input" value={f.installed_item} onChange={set('installed_item')}>
@@ -426,6 +426,8 @@ export default function OrdersPage() {
   const toggle = (id) => { const s = new Set(selected); s.has(id) ? s.delete(id) : s.add(id); setSelected(s) }
   const selPins = new Set(orders.filter((o) => selected.has(o.id)).map((o) => o.pin_code || ''))
   const bulkPin = selPins.size === 1 ? [...selPins][0] : ''
+  const selLocs = new Set(orders.filter((o) => selected.has(o.id)).map((o) => (o.location || '').trim().toUpperCase()))
+  const bulkLoc = selLocs.size === 1 ? [...selLocs][0] : ''
   const filtersOn = f.search || f.status || f.tech || f.from || f.to
 
   return (
@@ -476,7 +478,7 @@ export default function OrdersPage() {
       {selected.size > 0 && (
         <div className="card p-3 bg-brand-50 border-brand-200 flex flex-wrap items-center gap-2">
           <span className="text-sm font-semibold text-brand-700 mr-2">{selected.size} selected</span>
-          <TechPicker techs={techs} value={bulkTech} onChange={setBulkTech} placeholder="Assign to…" className="w-auto min-w-[200px] py-1.5 text-xs" pinCode={bulkPin}
+          <TechPicker techs={techs} value={bulkTech} onChange={setBulkTech} placeholder="Assign to…" className="w-auto min-w-[200px] py-1.5 text-xs" pinCode={bulkPin} location={bulkLoc}
             extra={[{ value: 'none', label: '— Unassign —' }]} />
           <button disabled={!bulkTech || busy} className="btn-primary text-xs py-1.5"
             onClick={() => update([...selected], { technician_id: bulkTech === 'none' ? null : bulkTech }, `${selected.size} orders ${bulkTech === 'none' ? 'unassigned' : 'assigned'}`).then(() => { setSelected(new Set()); setBulkTech('') })}>Assign</button>
@@ -545,7 +547,7 @@ export default function OrdersPage() {
                         <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-300 whitespace-nowrap" title="Order cancelled: the owner installed it himself">
                           <Home size={11} /> {OWN_INSTALL}</span>
                       ) : <TechPicker size="sm" techs={techs} value={o.technician_id || ''} disabled={busy} danger={!o.technician_id}
-                        placeholder="Unassigned" extra={[{ value: '', label: 'Unassigned' }]} pinCode={o.pin_code}
+                        placeholder="Unassigned" extra={[{ value: '', label: 'Unassigned' }]} pinCode={o.pin_code} location={o.location}
                         onChange={(v) => {
                           const t = techs.find((x) => x.id === v)
                           update([o.id], { technician_id: v || null }, t ? `${o.order_id} assigned to ${techLabel(t)}` : `${o.order_id} unassigned`)

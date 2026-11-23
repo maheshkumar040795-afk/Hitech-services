@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { techLabel } from '../lib/format'
 import { useTechStats } from '../hooks/useData'
-import { suggestForPin } from '../lib/suggest'
+import { suggestForOrder } from '../lib/suggest'
 
 /**
  * Type-to-search technician picker (300+ technicians).
@@ -14,10 +14,11 @@ import { suggestForPin } from '../lib/suggest'
  *   extra        [{ value: 'none', label: 'Unassigned' }] shown at the top
  *   activeOnly   hide inactive technicians (the current value is always shown)
  *   size         'sm' for table rows
- *   pinCode      the order's pin code → best-matching technicians are listed first under "Suggested"
+ *   pinCode      the order's pin code  ┐ best-matching technicians (same pin code, same area / district,
+ *   location     the order's location  ┘ done jobs there, nearby) are listed first under "Suggested"
  */
 export default function TechPicker({ techs = [], value = '', onChange, extra = [], placeholder = 'Select technician', activeOnly = true,
-  size = 'md', disabled = false, className = '', danger = false, showLoad = true, pinCode = '' }) {
+  size = 'md', disabled = false, className = '', danger = false, showLoad = true, pinCode = '', location = '' }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
   const [hi, setHi] = useState(0)
@@ -27,6 +28,8 @@ export default function TechPicker({ techs = [], value = '', onChange, extra = [
   const listRef = useRef(null)
   const { data: stats = {} } = useTechStats(null, null, { enabled: open && showLoad })
   const pin = /^\d{6}$/.test(String(pinCode || '').trim()) ? String(pinCode).trim() : ''
+  const loc = String(location || '').trim()
+  const suggestOn = !!(pin || loc)
   // Who has already completed jobs at this pin code (technician id → number of jobs)
   const { data: doneHere = {} } = useQuery({
     queryKey: ['pin-history', pin], enabled: open && !!pin, staleTime: 5 * 60_000,
@@ -48,17 +51,17 @@ export default function TechPicker({ techs = [], value = '', onChange, extra = [
     const s = q.trim().toLowerCase()
     const list = techs.filter((t) => (!activeOnly || t.is_active || t.id === value) &&
       (!s || [t.tech_code, t.name, t.city, t.district, t.mobile].some((v) => v && String(v).toLowerCase().includes(s))))
-    if (s || !pin) return [...(s ? [] : extra), ...list.slice(0, 80)]
-    const top = suggestForPin(techs, pin, doneHere, stats)
+    if (s || !suggestOn) return [...(s ? [] : extra), ...list.slice(0, 80)]
+    const top = suggestForOrder(techs, { pin, location: loc }, doneHere, stats)
     const ids = new Set(top.map((t) => t.id))
     return [...extra, ...top, ...list.filter((t) => !ids.has(t.id)).slice(0, 80)]
-  }, [techs, q, activeOnly, value, extra, pin, doneHere, stats])
+  }, [techs, q, activeOnly, value, extra, pin, loc, suggestOn, doneHere, stats])
   const lastSuggested = items.reduce((n, it, i) => (it.why ? i : n), -1)
 
   const place = () => {
     const r = btn.current?.getBoundingClientRect()
     if (!r) return
-    const width = Math.min(Math.max(r.width, pin ? 380 : 280), window.innerWidth - 16)
+    const width = Math.min(Math.max(r.width, suggestOn ? 400 : 280), window.innerWidth - 16)
     const below = window.innerHeight - r.bottom
     const up = below < 320 && r.top > below
     setPos({ left: Math.max(8, Math.min(r.left, window.innerWidth - width - 8)), width, ...(up ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }) })
@@ -109,7 +112,7 @@ export default function TechPicker({ techs = [], value = '', onChange, extra = [
               const st = it.id ? stats[it.id] : null
               return (
                 <li key={v || 'empty'} className={i === lastSuggested ? 'border-b border-slate-100 pb-1 mb-1' : ''}>
-                  {it.why && i === items.findIndex((x) => x.why) && <p className="px-3 pt-1.5 pb-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700 flex items-center gap-1"><MapPin size={10} /> Suggested for pin code {pin}</p>}
+                  {it.why && i === items.findIndex((x) => x.why) && <p className="px-3 pt-1.5 pb-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700 flex items-center gap-1"><MapPin size={10} /> Suggested for {[pin, loc].filter(Boolean).join(' · ')}</p>}
                   <button type="button" onMouseEnter={() => setHi(i)} onClick={() => pick(v)}
                     className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs ${i === hi ? 'bg-brand-50' : ''}`}>
                     <span className="w-4 flex-shrink-0">{v === value && <Check size={13} className="text-brand-600" />}</span>
@@ -117,7 +120,7 @@ export default function TechPicker({ techs = [], value = '', onChange, extra = [
                       <span className="font-mono text-[10px] font-semibold text-brand-700 bg-brand-50 px-1.5 rounded flex-shrink-0">{it.tech_code || '—'}</span>
                       <span className={`font-semibold text-slate-800 truncate ${it.why ? 'min-w-[6rem]' : ''}`}>{it.name}</span>
                       {it.why ? <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 rounded-full truncate">{it.why}</span>
-                        : <span className="text-slate-400 truncate">{it.city || ''}</span>}
+                        : <span className="text-slate-400 truncate">{[it.city, it.pincode].filter(Boolean).join(' · ')}</span>}
                       {!it.is_active && <span className="text-[10px] text-red-500">inactive</span>}
                       {showLoad && <span className={`ml-auto flex-shrink-0 text-[10px] font-semibold px-1.5 rounded-full ${Number(st?.pending) ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>{Number(st?.pending || 0)} open</span>}
                     </> : <span className="font-semibold text-slate-600">{it.label}</span>}

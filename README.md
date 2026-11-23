@@ -283,3 +283,11 @@ No SQL to run.
 **Free plan size:** 25 credits a month, where 1 credit = 1 GB stored *or* 1 GB viewed *or* 1,000 resized versions. At ~100 jobs × 3 photos a day (≈ 90 MB/day, ≈ 2.6 GB/month) the free plan lasts roughly **6–8 months** of stored photos. Watch *Dashboard → Usage*; when it gets near 25, delete old months in Media Library (filter by folder/date) or move to a paid plan. The app never asks Cloudinary for resized copies, so no credits go on transformations.
 
 **Note:** a photo removed with ✕ before Submit stays in Cloudinary (unsigned uploads cannot delete). It is harmless; old unused photos go away with the monthly cleanup above.
+
+## Update — Nov 2026 (8): technician suggestion by pin code AND area
+
+No SQL to run.
+
+When assigning an order (Orders row, bulk *Assign to…*, New / Edit order) the picker's **Suggested** list now matches the order's **Location** and **Pin Code** with each technician's **City / Area**, **District** and **Pincode** (Technicians page). Order of suggestions:
+1. Same pin code & area  2. Same pin code  3. Same area (order Location = technician City/Area)  4. Already completed jobs at this pin code  5. Same district  6. Nearby pin code (same first 3 digits).
+Within each group, the technician with fewer open jobs comes first. Common spelling differences are matched (Kancheepuram / Kanchipuram, Thiruvallur / Tiruvallur). Orders without a pin code still get suggestions by Location. Fill in City / Area, District and Pincode for every technician to get the best suggestions.
