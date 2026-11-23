@@ -17,8 +17,8 @@ window.HITECH_CONFIG = {
 
   // Installation photos in HT Jobs (Cloudinary, free plan). Setup: README → "Installation photos".
   // Both empty = photo upload switched off. Cloud name and upload preset are safe to share (not the API secret).
-  CLOUDINARY_CLOUD_NAME: '',
-  CLOUDINARY_UPLOAD_PRESET: '',
+  CLOUDINARY_CLOUD_NAME: 'kohueyyl',
+  CLOUDINARY_UPLOAD_PRESET: 'ht_jobs',
   // true = technician must add at least 1 photo to mark a job completed; false = photos optional
-  PHOTOS_REQUIRED: true,
+  PHOTOS_REQUIRED: false,
 }
