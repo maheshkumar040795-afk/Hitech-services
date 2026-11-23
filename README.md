@@ -320,3 +320,9 @@ No SQL to run.
 - Left menu / page title **Orders → Installation Orders**.
 - Select rows on Installation Orders or Repairs → the bar now has only **Assign** and **Delete** (bulk → Pending / Completed / Rejected / Cancelled / Reschedule removed; each row's own Status dropdown is unchanged).
 - **Every delete asks for the admin's login password** first: Installation Orders and Repairs (selected rows), Rate Config (delete a rate), Technicians → ₹ Finance (delete an entry), Technician Payout (*Undo* paid). A wrong password deletes nothing. The check uses a separate one-time login, so the admin stays logged in.
+
+## Update — Nov 2026 (12): sheet re-read keeps "Rescheduled"
+
+**Run once:** Supabase → SQL Editor → paste `2-Supabase-Setup/update-2026-11-import-keep-rescheduled.sql` → **Run**.
+
+Reading the Google Sheet (or uploading Excel) again no longer turns an order that the office **rescheduled** back into **Pending** (the sheet still says NOT_SERVICED). Only COMPLETED / REJECTED from the sheet change a rescheduled order. Reminder: a technician assigned on screen is kept when the sheet's TECHNICIAN cell is empty; a name / ID in that cell replaces it for Pending orders.
