@@ -249,3 +249,37 @@ No SQL to run.
 - **Status filter** has *Cancelled (own installation)*. Export, Reports and the order drawer show *Own Installation* as the technician; Export has a *Cancelled On* column.
 - **New columns STATE and VENDOR NAME**, right after DATE, in the Template, Upload Excel / Google Sheet (and preview), the Orders table, Export, Reports export, the order drawer and New / Edit order. Upload headers accepted: `STATE`; `VENDOR NAME` / `VENDOR` / `SELLER NAME`.
 - Sheet STATUS `CANCELLED` still imports as **Rejected** (unchanged).
+
+## Update — Nov 2026 (7): Installation photos in HT Jobs (Cloudinary)
+
+**Run once:** Supabase → SQL Editor → paste `2-Supabase-Setup/update-2026-11-job-photos.sql` → **Run**.
+
+- **HT Jobs → Mark Completed:** new *Installation photos* section with **Take photo** (opens the camera) and **Upload from gallery** (pick several). Max **10 photos** per job. Each photo is made smaller on the phone (longest side 1600 px, JPEG ≈ 150–400 KB instead of 3–10 MB) and uploaded straight to Cloudinary while the technician fills the rest. Submit waits until all photos are uploaded; a failed photo shows *Retry*.
+- With `PHOTOS_REQUIRED: true` (default) a job cannot be completed without at least 1 photo. Set it to `false` in `config.js` to make photos optional.
+- Only the photo links are saved in Supabase (`orders.photos`), so the free database stays small.
+- **Office:** order drawer shows the photos (click = full size), Orders shows "📷 3 photos" under *Completed*, Export has *Photos* and *Photo Links*. Audit Log records photo changes. HT Jobs *Done* cards show the photos too.
+- Until Cloudinary is set up (both settings empty), the photo section is hidden and HT Jobs works as before.
+
+### Cloudinary setup (one time, ~5 minutes, free)
+
+1. Go to **cloudinary.com** → *Sign up for free* (no card needed). Use the Hitech office email.
+2. After login, the **Cloud name** is shown at the top of the *Dashboard* (also in **Settings → API Keys**). Copy it, e.g. `dxyz12ab`. *(Do not copy the API Secret anywhere — it is not needed.)*
+3. **Settings (gear icon) → Upload → Upload presets → Add upload preset**:
+   - **Upload preset name:** `ht_jobs`
+   - **Signing mode:** **Unsigned** ← required (the phone uploads without a secret key)
+   - **Asset folder:** `hitech-jobs`
+   - **Use filename / Unique filename:** leave default (unique names)
+   - Optional, under *Upload control / Restrictions*: **Allowed formats** `jpg,jpeg,png,webp,heic`, **Max file size** `10 MB`
+   - **Save**.
+4. On GitHub open `1-Website/config.js` → ✏️ Edit → fill in:
+   ```js
+   CLOUDINARY_CLOUD_NAME: 'dxyz12ab',
+   CLOUDINARY_UPLOAD_PRESET: 'ht_jobs',
+   PHOTOS_REQUIRED: true,
+   ```
+   → **Commit changes**. The site redeploys by itself in about a minute. Technicians: close and reopen HT Jobs.
+5. Test: open a job in HT Jobs → Mark Completed → Take photo → Submit. The photo appears in Cloudinary → *Media Library → hitech-jobs* and in the office order drawer.
+
+**Free plan size:** 25 credits a month, where 1 credit = 1 GB stored *or* 1 GB viewed *or* 1,000 resized versions. At ~100 jobs × 3 photos a day (≈ 90 MB/day, ≈ 2.6 GB/month) the free plan lasts roughly **6–8 months** of stored photos. Watch *Dashboard → Usage*; when it gets near 25, delete old months in Media Library (filter by folder/date) or move to a paid plan. The app never asks Cloudinary for resized copies, so no credits go on transformations.
+
+**Note:** a photo removed with ✕ before Submit stays in Cloudinary (unsigned uploads cannot delete). It is harmless; old unused photos go away with the monthly cleanup above.

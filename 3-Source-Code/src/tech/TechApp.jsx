@@ -14,6 +14,8 @@ import WelcomeModal from '../components/WelcomeModal'
 import { usePushAlerts } from './usePushAlerts'
 import { useTechPresence } from '../hooks/usePresence'
 import IOSInstallSheet from '../components/ui/IOSInstallSheet'
+import PhotoPicker, { photoItems, photoUrls } from './PhotoPicker'
+import { PHOTOS_ENABLED, PHOTOS_REQUIRED, photoThumb } from '../lib/photos'
 
 const REASONS = [
   'Customer not available',
@@ -28,7 +30,8 @@ const REASONS = [
 const JOB_FIELDS_V2 = 'id, order_id, order_date, rescheduled_date, customer_name, phone_no, service, brand, location, address, pin_code, location_url, status, comments, cod_amount, payment_mode, closed_at, assigned_at'
 const JOB_FIELDS_V3 = JOB_FIELDS_V2 + ', product_type'
 const JOB_FIELDS_V4 = JOB_FIELDS_V3 + ', installed_item'
-const JOB_FIELDS = JOB_FIELDS_V4 + ', collect_amount'
+const JOB_FIELDS_V5 = JOB_FIELDS_V4 + ', collect_amount'
+const JOB_FIELDS = JOB_FIELDS_V5 + ', photos'
 const JOB_FIELDS_OLD = 'id, order_id, order_date, customer_name, phone_no, service, brand, location, address, pin_code, status, comments, cod_amount, closed_at, assigned_at'
 const HISTORY_SHORT = 3, HISTORY_LONG = 30   // days of Done / Not done jobs to download
 
@@ -59,7 +62,9 @@ function Sheet({ title, onClose, children, tall = false }) {
 // ── Complete / not-complete forms ─────────────────────────────────────────────
 function CompleteSheet({ job, onClose, onDone }) {
   const { toast } = useToast()
+  const { technician } = useAuth()
   const done = job.status === 'COMPLETED'
+  const [photos, setPhotos] = useState(() => photoItems(job.photos))
   // what was installed — list comes from Rate Config (names only)
   const { data: items = [], isLoading: itemsLoading } = useQuery({
     queryKey: ['install-items'], staleTime: 10 * 60_000,
@@ -87,8 +92,23 @@ function CompleteSheet({ job, onClose, onDone }) {
     const amazon = pay === 'AMAZON' && !(toCollect > 0)
     const v = amazon ? 0 : parseFloat(amount)
     if (!amazon && (amount === '' || isNaN(v) || v <= 0)) return toast('Enter the amount collected from the customer', 'error')
+    const urls = photoUrls(photos)
+    if (PHOTOS_ENABLED) {
+      if (photos.some((p) => p.status === 'uploading')) return toast('Please wait, photos are still uploading', 'error')
+      if (photos.some((p) => p.status === 'error')) return toast('A photo did not upload. Tap it to retry, or remove it (✕).', 'error')
+      if (PHOTOS_REQUIRED && !urls.length) return toast('Add at least 1 photo of the installation', 'error')
+    }
     setBusy(true)
     try {
+      // photos first: the job is never completed without its photos
+      const saved = job.photos || []
+      if (PHOTOS_ENABLED && (urls.length !== saved.length || urls.some((u, i) => u !== saved[i]))) {
+        try { await rpc('tech_save_photos', { p_order: job.id, p_urls: urls }) }
+        catch (err) {
+          if (/tech_save_photos|schema cache|Could not find the function/i.test(err?.message || '')) throw new Error('Photos are not set up on the server yet. Please call the office.')
+          throw err
+        }
+      }
       const base = { p_order: job.id, p_status: 'COMPLETED', p_amount: v, p_note: note || null }
       const withMode = { ...base, p_payment_mode: amazon ? 'AMAZON' : 'CASH' }   // CASH = collected from customer
       const old = (err) => /p_installed_item|p_payment_mode|schema cache|Could not find the function/i.test(err?.message || '')
@@ -159,13 +179,15 @@ function CompleteSheet({ job, onClose, onDone }) {
             </div>
           )}
         </div>
+        {PHOTOS_ENABLED && <PhotoPicker items={photos} setItems={setPhotos} orderId={job.order_id} techCode={technician?.tech_code} />}
+
         <div>
           <label className="block text-sm font-semibold text-slate-700 mb-2">Note <span className="font-normal text-slate-400">(optional)</span></label>
           <textarea rows={2} className="w-full rounded-2xl border-2 border-slate-200 focus:border-emerald-500 outline-none p-3 text-base"
             placeholder="e.g. Installed with extra pipe 2 m" value={note} onChange={(e) => setNote(e.target.value)} />
         </div>
-        <button disabled={busy} className="w-full py-4 rounded-2xl bg-emerald-600 active:bg-emerald-700 text-white text-lg font-bold flex items-center justify-center gap-2 disabled:opacity-60">
-          <CheckCircle2 size={22} /> {busy ? 'Saving…' : 'Submit — Job Completed'}
+        <button disabled={busy || photos.some((p) => p.status === 'uploading')} className="w-full py-4 rounded-2xl bg-emerald-600 active:bg-emerald-700 text-white text-lg font-bold flex items-center justify-center gap-2 disabled:opacity-60">
+          <CheckCircle2 size={22} /> {busy ? 'Saving…' : photos.some((p) => p.status === 'uploading') ? 'Uploading photos…' : 'Submit — Job Completed'}
         </button>
       </form>
     </Sheet>
@@ -282,6 +304,12 @@ function JobDetail({ job, onClose, refresh }) {
             ))}
           </div>
 
+          {job.photos?.length > 0 && (
+            <div className="grid grid-cols-4 gap-2">
+              {job.photos.map((u) => <a key={u} href={u} target="_blank" rel="noreferrer" className="aspect-square rounded-xl overflow-hidden bg-slate-100"><img src={photoThumb(u)} alt="Installation photo" loading="lazy" className="w-full h-full object-cover" /></a>)}
+            </div>
+          )}
+
           {isOpen(job) ? (
             <div className="space-y-2">
               <button onClick={() => setAction('complete')} className="w-full py-4 rounded-2xl bg-emerald-600 active:bg-emerald-700 text-white text-lg font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20">
@@ -347,6 +375,11 @@ function DoneCard({ job }) {
       <div className="flex items-center gap-2 text-sm"><Banknote size={15} className="text-slate-400 flex-shrink-0" />
         {amazon ? <span className="font-semibold text-amber-700">Paid on Amazon · nothing collected</span>
           : <span><b className="text-slate-900">{fmtMoney(job.cod_amount)}</b> <span className="text-slate-500">cash collected</span></span>}</div>
+      {job.photos?.length > 0 && (
+        <div className="flex gap-1.5 overflow-x-auto pt-0.5">
+          {job.photos.map((u) => <a key={u} href={u} target="_blank" rel="noreferrer" className="w-12 h-12 flex-shrink-0 rounded-lg overflow-hidden bg-slate-100"><img src={photoThumb(u)} alt="" loading="lazy" className="w-full h-full object-cover" /></a>)}
+        </div>
+      )}
     </div>
   )
 }
@@ -478,6 +511,7 @@ export default function TechApp() {
         .order('order_date', { ascending: true })
       let { data, error } = await run(JOB_FIELDS)
       // a newer column missing = database update not run yet → fall back to older field lists
+      if (error?.code === '42703') ({ data, error } = await run(JOB_FIELDS_V5))
       if (error?.code === '42703') ({ data, error } = await run(JOB_FIELDS_V4))
       if (error?.code === '42703') ({ data, error } = await run(JOB_FIELDS_V3))
       if (error?.code === '42703') ({ data, error } = await run(JOB_FIELDS_V2))

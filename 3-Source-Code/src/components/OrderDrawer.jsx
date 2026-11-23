@@ -4,6 +4,7 @@ import { X, Phone, MapPin, Send, History, MessageSquare } from 'lucide-react'
 import { supabase, errMsg } from '../lib/supabase'
 import { fmtDate, fmtDateTime, fmtDayIST, fmtMoney, STATUS, PAYMENT, mapsUrl, telUrl, techLabel, isUrl, OWN_INSTALL } from '../lib/format'
 import { useAuth } from '../context/AuthContext'
+import { photoThumb } from '../lib/photos'
 import { useToast } from '../context/ToastContext'
 
 /** Slide-in panel: full order details, comment history, change history */
@@ -88,6 +89,15 @@ export default function OrderDrawer({ orderId, onClose }) {
                 <div key={l}><p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-0.5">{l}</p><p className="text-xs font-medium text-slate-800 break-words">{v}</p></div>
               ))}
             </div>
+            {o.photos?.length > 0 && (
+              <div>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1.5">Installation photos ({o.photos.length})</p>
+                <div className="grid grid-cols-4 gap-2">
+                  {o.photos.map((u, i) => <a key={u} href={u} target="_blank" rel="noreferrer" title={`Photo ${i + 1} — open full size`} className="aspect-square rounded-lg overflow-hidden bg-slate-100 border border-slate-200 hover:ring-2 hover:ring-brand-400">
+                    <img src={photoThumb(u)} alt={`Photo ${i + 1}`} loading="lazy" className="w-full h-full object-cover" /></a>)}
+                </div>
+              </div>
+            )}
             <div className="flex gap-2">
               {telUrl(o.phone_no) && <a href={telUrl(o.phone_no)} className="btn-secondary text-xs"><Phone size={12} /> Call customer</a>}
               <a href={mapsUrl(o)} target="_blank" rel="noreferrer" className="btn-secondary text-xs"><MapPin size={12} /> {isUrl(o.location_url) ? 'Google location' : 'Map'}</a>

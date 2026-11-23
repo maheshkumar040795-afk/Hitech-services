@@ -12,6 +12,7 @@ const ACTION_META = {
   STATUS_CHANGED: ['Status', 'bg-purple-100 text-purple-700'],
   TECH_ASSIGNED: ['Assigned', 'bg-emerald-100 text-emerald-700'],
   TECH_UNASSIGNED: ['Unassigned', 'bg-amber-100 text-amber-700'],
+  PHOTOS_UPDATED: ['Photos', 'bg-teal-100 text-teal-700'],
   AMOUNT_UPDATED: ['Amount', 'bg-teal-100 text-teal-700'],
   ORDER_DELETED: ['Deleted', 'bg-red-100 text-red-700'],
   ORDER_RESTORED: ['Restored', 'bg-green-100 text-green-700'],

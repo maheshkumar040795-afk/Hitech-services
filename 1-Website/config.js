@@ -14,4 +14,11 @@ window.HITECH_CONFIG = {
   // New-job alerts on technicians' phones: PUBLIC half of the web-push key pair (safe to share).
   // The private half is the Supabase secret VAPID_PRIVATE_KEY. Leave empty to switch alerts off.
   WEB_PUSH_PUBLIC_KEY: 'BKdUnG9_GMsGXwpFEnZBjeXteLi5pwJl4HTbw50_2SUedEo6PYa7VQFohhEvWZhPAFO7GHSyu59suuuFh2SNRoU',
+
+  // Installation photos in HT Jobs (Cloudinary, free plan). Setup: README → "Installation photos".
+  // Both empty = photo upload switched off. Cloud name and upload preset are safe to share (not the API secret).
+  CLOUDINARY_CLOUD_NAME: '',
+  CLOUDINARY_UPLOAD_PRESET: '',
+  // true = technician must add at least 1 photo to mark a job completed; false = photos optional
+  PHOTOS_REQUIRED: true,
 }

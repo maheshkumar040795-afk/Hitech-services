@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
-import { Search, Upload, Download, Eye, MessageSquare, X, ChevronLeft, ChevronRight, Plus, FileDown, Trash2, AlertTriangle, CheckCircle2, Pencil, MapPin, CalendarClock, Save, Sheet, Loader2, Home } from 'lucide-react'
+import { Search, Upload, Download, Eye, MessageSquare, X, ChevronLeft, ChevronRight, Plus, FileDown, Trash2, AlertTriangle, CheckCircle2, Pencil, MapPin, CalendarClock, Save, Sheet, Loader2, Home, Camera } from 'lucide-react'
 import { supabase, rpc, errMsg, fetchAll, safeSearch, fetchSheetViaFunction } from '../lib/supabase'
 import { fmtDate, fmtDateTime, fmtDayIST, STATUS, PAYMENT, payLabel, todayIST, techLabel, isUrl, OWN_INSTALL } from '../lib/format'
 import { parseOrdersFile, parseOrdersBuffer, fetchGoogleSheet, downloadOrdersTemplate, downloadXlsx } from '../lib/excel'
@@ -415,7 +415,7 @@ export default function OrdersPage() {
         'Sheet Status': o.source_status || '', 'Installed Item': o.installed_item || '', 'Technician ID': techs.find((t) => t.id === o.technician_id)?.tech_code || '',
         'Rescheduled To': o.rescheduled_date ? fmtDate(o.rescheduled_date) : '', Address: o.address || '', 'Google Location': o.location_url || '',
         'Completed On': o.status === 'COMPLETED' && o.closed_at ? fmtDayIST(o.closed_at) : '', 'Not Done On': o.status === 'REJECTED' && o.closed_at ? fmtDayIST(o.closed_at) : '', 'Cancelled On': o.status === 'CANCELLED' && o.closed_at ? fmtDayIST(o.closed_at) : '',
-        'Cash Collect': Number(o.collect_amount || 0), 'Collected from customer': Number(o.cod_amount || 0), Payment: payLabel(o), Comments: o.comments || '',
+        'Photos': (o.photos || []).length, 'Photo Links': (o.photos || []).join(' '), 'Cash Collect': Number(o.collect_amount || 0), 'Collected from customer': Number(o.cod_amount || 0), Payment: payLabel(o), Comments: o.comments || '',
         'Modified By': o.modifier?.name || '', 'Modified At': o.modified_at ? fmtDateTime(o.modified_at) : '',
       })) }])
     } catch (e) { toast(errMsg(e), 'error') } finally { setBusy(false) }
@@ -565,6 +565,7 @@ export default function OrdersPage() {
                         : o.status === 'CANCELLED' && o.closed_at ? <span className="text-slate-500" title={`Cancelled · ${fmtDateTime(o.closed_at)}`}>{fmtDayIST(o.closed_at)}</span>
                         : <span className="text-slate-300">—</span>}
                       {o.installed_item && <div className="text-[10px] text-slate-500 max-w-[140px] whitespace-normal leading-tight mt-0.5" title="Installed">{o.installed_item}</div>}
+                      {o.photos?.length > 0 && <button onClick={() => setDetailId(o.id)} title="View installation photos" className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-semibold text-brand-600 hover:underline"><Camera size={11} /> {o.photos.length} photo{o.photos.length > 1 ? 's' : ''}</button>}
                     </td>
                     <td className="px-3 py-2">
                       <input key={`${o.id}-${o.cod_amount}`} type="number" min="0" step="0.01" defaultValue={Number(o.cod_amount || 0)}
