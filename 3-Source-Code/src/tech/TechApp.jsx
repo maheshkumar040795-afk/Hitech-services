@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Phone, MapPin, MessageCircle, ChevronRight, X, CheckCircle2, XCircle, Clock, RefreshCw, LogOut,
   User, Lock, Send, Search, RotateCcw, Pencil, KeyRound, Wifi, WifiOff, CalendarDays, ClipboardList, CalendarClock, Banknote, BellRing, ShoppingBag, Wrench,
+  Hammer,
 } from 'lucide-react'
 import { supabase, rpc, errMsg } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -31,7 +32,8 @@ const JOB_FIELDS_V2 = 'id, order_id, order_date, rescheduled_date, customer_name
 const JOB_FIELDS_V3 = JOB_FIELDS_V2 + ', product_type'
 const JOB_FIELDS_V4 = JOB_FIELDS_V3 + ', installed_item'
 const JOB_FIELDS_V5 = JOB_FIELDS_V4 + ', collect_amount'
-const JOB_FIELDS = JOB_FIELDS_V5 + ', photos'
+const JOB_FIELDS_V6 = JOB_FIELDS_V5 + ', photos'
+const JOB_FIELDS = JOB_FIELDS_V6 + ', job_type'
 const JOB_FIELDS_OLD = 'id, order_id, order_date, customer_name, phone_no, service, brand, location, address, pin_code, status, comments, cod_amount, closed_at, assigned_at'
 const HISTORY_SHORT = 3, HISTORY_LONG = 30   // days of Done / Not done jobs to download
 
@@ -65,13 +67,15 @@ function CompleteSheet({ job, onClose, onDone }) {
   const { technician } = useAuth()
   const done = job.status === 'COMPLETED'
   const [photos, setPhotos] = useState(() => photoItems(job.photos))
-  // what was installed — list comes from Rate Config (names only)
+  // what was installed / repaired — list comes from Rate Config (names only)
+  const repair = job.job_type === 'REPAIR'
+  const fn = repair ? 'tech_repair_items' : 'tech_install_items'
   const { data: items = [], isLoading: itemsLoading } = useQuery({
-    queryKey: ['install-items'], staleTime: 10 * 60_000,
+    queryKey: ['install-items', fn], staleTime: 10 * 60_000,
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('tech_install_items')
+      const { data, error } = await supabase.rpc(fn)
       if (error) return []   // server not updated yet → no picker
-      return (data || []).map((r) => (typeof r === 'string' ? r : r.tech_install_items)).filter(Boolean)
+      return (data || []).map((r) => (typeof r === 'string' ? r : r[fn])).filter(Boolean)
     },
   })
   const norm = (x) => (x || '').trim().toLowerCase()
@@ -87,7 +91,7 @@ function CompleteSheet({ job, onClose, onDone }) {
   const [busy, setBusy] = useState(false)
   const submit = async (e) => {
     e.preventDefault()
-    if (items.length && !item) return toast('Select what you installed', 'error')
+    if (items.length && !item) return toast(repair ? 'Select what you repaired' : 'Select what you installed', 'error')
     if (!pay) return toast('Select Collect from customer or Paid on Amazon', 'error')
     const amazon = pay === 'AMAZON' && !(toCollect > 0)
     const v = amazon ? 0 : parseFloat(amount)
@@ -125,7 +129,7 @@ function CompleteSheet({ job, onClose, onDone }) {
   }
   const choice = (on, active) => `rounded-2xl border-2 font-bold transition ${active ? on : 'border-slate-200 text-slate-600 active:bg-slate-50'}`
   return (
-    <Sheet title="Mark job completed" onClose={onClose}>
+    <Sheet title={repair ? 'Mark repair completed' : 'Mark job completed'} onClose={onClose}>
       <form onSubmit={submit} className="p-5 space-y-5">
         <div className="text-sm text-slate-600"><b className="text-slate-900">{job.customer_name}</b> · {job.service}</div>
 
@@ -141,7 +145,7 @@ function CompleteSheet({ job, onClose, onDone }) {
 
         {(itemsLoading || items.length > 0) && (
           <div>
-            <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 mb-2"><Wrench size={15} /> 1. What did you install?</label>
+            <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 mb-2"><Wrench size={15} /> 1. What did you {repair ? 'repair' : 'install'}?</label>
             {itemsLoading ? <div className="h-12 rounded-2xl bg-slate-100 animate-pulse" /> : (
               <div className="space-y-1.5 max-h-64 overflow-y-auto pr-0.5">
                 {items.map((i) => (
@@ -288,6 +292,7 @@ function JobDetail({ job, onClose, refresh }) {
 
           <div className="rounded-2xl border border-slate-200 divide-y divide-slate-100">
             {[
+              ...(job.job_type === 'REPAIR' ? [['Job', 'Repair']] : []),
               ['Service', [job.service, job.brand].filter(Boolean).join(' · ') || '—'],
               ...(job.product_type ? [['Product type', job.product_type]] : []),
               ...(job.installed_item ? [['Installed', job.installed_item]] : []),
@@ -368,7 +373,7 @@ function DoneCard({ job }) {
   return (
     <div className="bg-white rounded-3xl border border-slate-200/70 shadow-soft px-4 py-3.5 space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <span className="flex items-center gap-1.5 text-sm font-bold text-emerald-700"><CheckCircle2 size={16} /> Completed</span>
+        <span className="flex items-center gap-1.5 text-sm font-bold text-emerald-700"><CheckCircle2 size={16} /> {job.job_type === 'REPAIR' ? 'Repair completed' : 'Completed'}</span>
         <span className="text-xs font-semibold text-slate-500">{fmtDayIST(job.closed_at, { day: 'numeric', month: 'short', year: 'numeric' })}</span>
       </div>
       <div className="flex items-start gap-2 text-[15px] text-slate-800"><Wrench size={15} className="text-slate-400 mt-1 flex-shrink-0" /><span className="font-semibold">{job.installed_item || job.service || '—'}</span></div>
@@ -393,6 +398,7 @@ function JobCard({ job, onOpen, isNew }) {
         <div className="flex items-center justify-between gap-2 mb-1.5">
           <div className="flex items-center gap-2">
             {isNew && <span className="px-2 py-0.5 rounded-full text-white text-[10px] font-bold shadow-glow" style={{ background: 'var(--grad-brand)' }}>NEW</span>}
+            {job.job_type === 'REPAIR' && <span className="px-2 py-0.5 rounded-full bg-orange-500 text-white text-[10px] font-bold flex items-center gap-0.5"><Hammer size={10} /> REPAIR</span>}
             {isOpen(job)
               ? <span className={`text-xs font-semibold ${overdue ? 'text-red-600' : job.status === 'RESCHEDULED' ? 'text-sky-700' : 'text-slate-400'}`}>{job.status === 'RESCHEDULED' ? <CalendarClock size={12} className="inline -mt-0.5" /> : <CalendarDays size={12} className="inline -mt-0.5" />} {job.status === 'RESCHEDULED' ? 'Rescheduled · ' : ''}{fmtDate(visitDate(job), { day: 'numeric', month: 'short' })}{overdue ? ' · overdue' : ''}</span>
               : <StatusPill status={job.status} />}
@@ -468,7 +474,12 @@ function SalaryCard({ label, m, current }) {
       <p className="text-[11px] text-slate-400 -mt-0.5">{month}{month && (current ? ` · 1 – ${day}` : '')}</p>
       {!m ? <div className="h-12 mt-1 rounded-lg bg-white/10 animate-pulse" /> : <>
         <div className="mt-1 space-y-0.5 text-[11px] tabular-nums">
-          <div className="flex justify-between"><span className="text-slate-300">Earned</span><span className="font-semibold text-white">{fmtMoney(m.earned)}</span></div>
+          {m.repairs === undefined
+            ? <div className="flex justify-between"><span className="text-slate-300">Earned</span><span className="font-semibold text-white">{fmtMoney(m.earned)}</span></div>
+            : <>
+              <div className="flex justify-between gap-1"><span className="text-slate-300 truncate">Install <span className="text-slate-400">×{m.installs}</span></span><span className="font-semibold text-white">{fmtMoney(m.install_earned)}</span></div>
+              <div className="flex justify-between gap-1"><span className="text-slate-300 truncate">Repair <span className="text-slate-400">×{m.repairs}</span></span><span className="font-semibold text-orange-200">{fmtMoney(m.repair_earned)}</span></div>
+            </>}
           <div className="flex justify-between"><span className="text-slate-300">Collected</span><span className="font-semibold text-amber-300">− {fmtMoney(m.collected)}</span></div>
           {paid && <div className="flex justify-between"><span className="text-slate-300">Paid</span><span className="font-semibold text-emerald-300">− {fmtMoney(m.paid)}</span></div>}
         </div>
@@ -511,6 +522,7 @@ export default function TechApp() {
         .order('order_date', { ascending: true })
       let { data, error } = await run(JOB_FIELDS)
       // a newer column missing = database update not run yet → fall back to older field lists
+      if (error?.code === '42703') ({ data, error } = await run(JOB_FIELDS_V6))
       if (error?.code === '42703') ({ data, error } = await run(JOB_FIELDS_V5))
       if (error?.code === '42703') ({ data, error } = await run(JOB_FIELDS_V4))
       if (error?.code === '42703') ({ data, error } = await run(JOB_FIELDS_V3))

@@ -291,3 +291,14 @@ No SQL to run.
 When assigning an order (Orders row, bulk *Assign to…*, New / Edit order) the picker's **Suggested** list now matches the order's **Location** and **Pin Code** with each technician's **City / Area**, **District** and **Pincode** (Technicians page). Order of suggestions:
 1. Same pin code & area  2. Same pin code  3. Same area (order Location = technician City/Area)  4. Already completed jobs at this pin code  5. Same district  6. Nearby pin code (same first 3 digits).
 Within each group, the technician with fewer open jobs comes first. Common spelling differences are matched (Kancheepuram / Kanchipuram, Thiruvallur / Tiruvallur). Orders without a pin code still get suggestions by Location. Fill in City / Area, District and Pincode for every technician to get the best suggestions.
+
+## Update — Nov 2026 (9): Repairs
+
+**Run once:** Supabase → SQL Editor → paste `2-Supabase-Setup/update-2026-11-repairs.sql` → **Run**. (Until then Orders, Payout and HT Jobs keep working as before; the Repairs screen shows a "run the SQL" message.)
+
+- **New office screen "Repairs"** (menu under Orders). Works exactly like Orders: Template, Upload Excel, Google Sheet, New Repair, Export, assign technician (with pin code / area suggestions), Pending / Rescheduled / Completed / Rejected / Cancelled ("Own Repair"), Cash Collect, photos, order drawer, audit.
+  Repairs and installations are kept apart by a new **Job type** on each order. All existing orders are installations. An Order ID can exist only once: uploading a repair with an Order ID that is already an installation (or the other way round) is reported as an error in the upload result, nothing is overwritten.
+- **Rate Config → Repair rates** (new switch above Within / Outside Chennai). Add repair items with their Within Chennai and Outside Chennai rates. The same name may be in both lists with different rates. A completed repair takes its rate from the Repair list; an installation from the Installation list. *Apply rates to this month's completed jobs* updates both.
+- **HT Jobs:** repair jobs show an orange **REPAIR** badge. *Mark Completed* asks **"What did you repair?"** with the Repair list. The salary cards show **Install × n ₹…** and **Repair × n ₹…** for previous and current month, then Collected and Net salary.
+- **Technician Payout:** new **Installations** and **Repairs** columns (count and amount) and summary cards; job details have a *Type* column; Export has Installations / Installation earned / Repairs / Repair earned, and *Type* per job. Mark as paid covers both.
+- Reports export and the order drawer show the Job Type. The Dashboard counts installations and repairs together.

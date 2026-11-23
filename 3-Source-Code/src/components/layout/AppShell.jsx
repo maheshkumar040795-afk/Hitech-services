@@ -2,7 +2,7 @@ import { useState, Suspense, useEffect, useRef } from 'react'
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import {
-  LayoutDashboard, ClipboardList, Wrench, FileBarChart2, History, Users, Settings,
+  LayoutDashboard, ClipboardList, Hammer, Wrench, FileBarChart2, History, Users, Settings,
   LogOut, Contact2 as IdCard, Wallet, BadgeIndianRupee, ChevronLeft, ChevronRight, Wifi, WifiOff, Receipt, Menu, X,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
@@ -17,6 +17,7 @@ import Logo from '../Logo'
 const NAV_ITEMS = [
   { to: '/',            label: 'Dashboard',   icon: LayoutDashboard, exact: true },
   { to: '/orders',      label: 'Orders',      icon: ClipboardList },
+  { to: '/repairs',     label: 'Repairs',     icon: Hammer },
   { to: '/technicians', label: 'Technicians', icon: Wrench },
   { to: '/billing',     label: 'Billing',     icon: Receipt },
   { to: '/payouts',     label: 'Technician Payout', icon: Wallet,  adminOnly: true },

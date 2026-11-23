@@ -79,9 +79,12 @@ export default function PayoutPage() {
       const load = (c) => fetchAll(() => supabase.from('orders').select(c)
           .eq('status', 'COMPLETED').eq('is_deleted', false).not('technician_id', 'is', null)
           .gte('closed_at', fromIso).lt('closed_at', toIso).order('closed_at'))
+      const old = (e) => e?.code === '42703'   // older database without the newer columns
       const [jobs, ratesRes] = await Promise.all([
-        load(cols + ', installed_item').catch((e) => { if (e?.code === '42703') return load(cols); throw e }),
-        supabase.from('service_rates').select('service, rate_chennai, rate_outside'),
+        load(cols + ', installed_item, job_type')
+          .catch((e) => { if (old(e)) return load(cols + ', installed_item'); throw e })
+          .catch((e) => { if (old(e)) return load(cols); throw e }),
+        supabase.from('service_rates').select('*'),
       ])
       if (ratesRes.error) throw ratesRes.error
       return { jobs, rates: ratesRes.data }
@@ -90,18 +93,19 @@ export default function PayoutPage() {
 
   const rows = useMemo(() => {
     if (!data) return []
-    const rateMap = new Map(data.rates.map((r) => [key(r.service), r]))
+    const rateMap = new Map(data.rates.map((r) => [`${r.kind || 'INSTALLATION'}|${key(r.service)}`, r]))
     const byTech = new Map()
     for (const o of data.jobs) {
       const region = regionOf(o)
       const item = o.installed_item || o.service
-      const cfg = rateMap.get(key(item))
+      const type = o.job_type === 'REPAIR' ? 'REPAIR' : 'INSTALLATION'
+      const cfg = rateMap.get(`${type}|${key(item)}`)
       const rate = o.payout_rate !== null && o.payout_rate !== undefined ? Number(o.payout_rate)
         : cfg ? (region === 'OUTSIDE' ? cfg.rate_outside : cfg.rate_chennai) : null
       const amazon = o.payment_mode === 'AMAZON'
       const collected = amazon ? 0 : Number(o.cod_amount || 0)   // from the customer, cash or UPI
       const r = rate === null || rate === undefined ? null : Number(rate)
-      const job = { ...o, item, region, rate: r, amazon, collected, net: (r || 0) - collected }
+      const job = { ...o, item, type, region, rate: r, amazon, collected, net: (r || 0) - collected }
       const t = byTech.get(o.technician_id) || { id: o.technician_id, jobs: [] }
       t.jobs.push(job); byTech.set(o.technician_id, t)
     }
@@ -110,9 +114,12 @@ export default function PayoutPage() {
       const earned = t.jobs.reduce((s, j) => s + (j.rate || 0), 0)
       const collected = t.jobs.reduce((s, j) => s + j.collected, 0)
       const svc = new Map()
-      t.jobs.forEach((j) => { const k = j.item || '—'; svc.set(k, (svc.get(k) || 0) + 1) })
+      t.jobs.forEach((j) => { const k = (j.type === 'REPAIR' ? 'Repair: ' : '') + (j.item || '—'); svc.set(k, (svc.get(k) || 0) + 1) })
+      const inst = t.jobs.filter((j) => j.type !== 'REPAIR'), rep = t.jobs.filter((j) => j.type === 'REPAIR')
       return {
         ...t, info, earned, collected, net: earned - collected,
+        installs: inst.length, installEarned: inst.reduce((s, j) => s + (j.rate || 0), 0),
+        repairs: rep.length, repairEarned: rep.reduce((s, j) => s + (j.rate || 0), 0),
         amazon: t.jobs.filter((j) => j.amazon).length,
         collectedJobs: t.jobs.filter((j) => j.collected > 0).length,
         missing: t.jobs.filter((j) => j.rate === null).length,
@@ -124,8 +131,9 @@ export default function PayoutPage() {
   const shown = rows.filter((r) => (!tech || r.id === tech) &&
     (!q || [r.info.name, r.info.tech_code, r.info.city].some((v) => key(v).includes(key(q)))))
   const tot = shown.reduce((s, r) => ({ jobs: s.jobs + r.jobs.length, earned: s.earned + r.earned, collected: s.collected + r.collected, amazon: s.amazon + r.amazon,
-    collectedJobs: s.collectedJobs + r.collectedJobs, net: s.net + r.net, missing: s.missing + r.missing }),
-    { jobs: 0, earned: 0, collected: 0, amazon: 0, collectedJobs: 0, net: 0, missing: 0 })
+    collectedJobs: s.collectedJobs + r.collectedJobs, net: s.net + r.net, missing: s.missing + r.missing,
+    installs: s.installs + r.installs, installEarned: s.installEarned + r.installEarned, repairs: s.repairs + r.repairs, repairEarned: s.repairEarned + r.repairEarned }),
+    { jobs: 0, earned: 0, collected: 0, amazon: 0, collectedJobs: 0, net: 0, missing: 0, installs: 0, installEarned: 0, repairs: 0, repairEarned: 0 })
 
   const pick = ([k, , fn]) => { setQuick(k); setRange(fn()) }
   const toggle = (id) => setOpen((p) => { const s = new Set(p); s.has(id) ? s.delete(id) : s.add(id); return s })
@@ -136,26 +144,26 @@ export default function PayoutPage() {
     const result = (net) => (net < 0 ? 'Technician owes office' : net > 0 ? 'Pay technician' : 'Settled')
     const summary = shown.map((r, i) => ({
       'S.No': i + 1, Period: period, 'Technician ID': r.info.tech_code || '', Technician: r.info.name, Mobile: r.info.mobile || '',
-      'Jobs completed': r.jobs.length, 'Jobs: collected from customer': r.collectedJobs, 'Jobs: paid on Amazon': r.amazon, 'Jobs without rate': r.missing,
+      'Jobs completed': r.jobs.length, Installations: r.installs, 'Installation earned ₹': r.installEarned, Repairs: r.repairs, 'Repair earned ₹': r.repairEarned, 'Jobs: collected from customer': r.collectedJobs, 'Jobs: paid on Amazon': r.amazon, 'Jobs without rate': r.missing,
       'Earned (Rate Config) ₹': r.earned, 'Collected from customer ₹': r.collected, 'Net pay ₹': r.net, Result: result(r.net), ...(showSalary ? { 'Salary status': salaryInfo(r).label } : {}), Services: r.services,
     }))
     if (shown.length > 1) summary.push({
       'S.No': '', Period: period, 'Technician ID': '', Technician: 'TOTAL', Mobile: '',
-      'Jobs completed': tot.jobs, 'Jobs: collected from customer': tot.collectedJobs, 'Jobs: paid on Amazon': tot.amazon, 'Jobs without rate': tot.missing,
+      'Jobs completed': tot.jobs, Installations: tot.installs, 'Installation earned ₹': tot.installEarned, Repairs: tot.repairs, 'Repair earned ₹': tot.repairEarned, 'Jobs: collected from customer': tot.collectedJobs, 'Jobs: paid on Amazon': tot.amazon, 'Jobs without rate': tot.missing,
       'Earned (Rate Config) ₹': tot.earned, 'Collected from customer ₹': tot.collected, 'Net pay ₹': tot.net, Result: result(tot.net), Services: '',
     })
     const details = shown.flatMap((r) => [
       ...r.jobs.map((j, i) => ({
-        'Technician ID': r.info.tech_code || '', Technician: r.info.name, 'Job No': i + 1, 'Completed On': fmtDayIST(j.closed_at), 'Order ID': j.order_id, Customer: j.customer_name,
+        'Technician ID': r.info.tech_code || '', Technician: r.info.name, 'Job No': i + 1, Type: j.type === 'REPAIR' ? 'Repair' : 'Installation', 'Completed On': fmtDayIST(j.closed_at), 'Order ID': j.order_id, Customer: j.customer_name,
         'Service (order)': j.service || '', 'Installed Item': j.installed_item || '', Region: j.region === 'OUTSIDE' ? 'Outside Chennai' : 'Within Chennai',
         Payment: payLabel(j) || 'Nothing collected', 'Rate ₹': j.rate ?? 'Not set', 'Collected from customer ₹': j.collected, 'Net for this job ₹': j.net,
       })),
-      { 'Technician ID': r.info.tech_code || '', Technician: `TOTAL: ${r.info.name}`, 'Job No': `${r.jobs.length} job${r.jobs.length > 1 ? 's' : ''}`, 'Completed On': '', 'Order ID': '', Customer: '',
+      { 'Technician ID': r.info.tech_code || '', Technician: `TOTAL: ${r.info.name}`, 'Job No': `${r.jobs.length} job${r.jobs.length > 1 ? 's' : ''}`, Type: `${r.installs} inst. · ${r.repairs} rep.`, 'Completed On': '', 'Order ID': '', Customer: '',
         'Service (order)': '', 'Installed Item': '', Region: '', Payment: result(r.net), 'Rate ₹': r.earned, 'Collected from customer ₹': r.collected, 'Net for this job ₹': r.net },
     ])
     downloadXlsx(`technician-payout-${label}.xlsx`, [
-      { name: 'Summary', rows: summary, widths: [6, 22, 14, 22, 13, 15, 27, 20, 17, 21, 25, 12, 22, 60] },
-      { name: 'Job details', rows: details, widths: [14, 26, 9, 14, 24, 22, 32, 32, 16, 24, 10, 25, 19] },
+      { name: 'Summary', rows: summary, widths: [6, 22, 14, 22, 13, 15, 13, 20, 10, 15, 27, 20, 17, 21, 25, 12, 22, 60] },
+      { name: 'Job details', rows: details, widths: [14, 26, 9, 16, 14, 24, 22, 32, 32, 16, 24, 10, 25, 19] },
     ])
   }
 
@@ -187,8 +195,10 @@ export default function PayoutPage() {
         </div>
       </div>
 
-      <div className="stagger grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {[['Jobs completed', tot.jobs, 'text-slate-900'], ['Earned (rates)', fmtMoney(tot.earned), 'text-slate-900'],
+      <div className="stagger grid grid-cols-2 lg:grid-cols-5 gap-3">
+        {[['Installations', <>{tot.installs} <span className="text-sm font-bold text-slate-400">· {fmtMoney(tot.installEarned)}</span></>, 'text-slate-900'],
+          ['Repairs', <>{tot.repairs} <span className="text-sm font-bold text-slate-400">· {fmtMoney(tot.repairEarned)}</span></>, 'text-orange-700'],
+          ['Earned (rates)', fmtMoney(tot.earned), 'text-slate-900'],
           ['Collected from customer', fmtMoney(tot.collected), 'text-amber-700'], ['Net pay', fmtMoney(tot.net), tot.net < 0 ? 'text-red-600' : 'text-emerald-700']].map(([l, v, c]) => (
           <div key={l} className="card p-4"><p className="text-[10.5px] font-bold text-slate-500 uppercase tracking-[.08em]">{l}</p><p className={`text-[22px] font-heading font-extrabold mt-1 tabular-nums ${c}`}>{v}</p></div>
         ))}
@@ -215,16 +225,17 @@ export default function PayoutPage() {
       <div className="card p-0 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead><tr>{['', 'Technician', 'Jobs', 'Services', 'Earned', 'Collected from customer', 'Paid on Amazon', 'Net pay', ...(showSalary ? [`Salary · ${monthName(month)}`] : [])].map((h) => <th key={h} className="th whitespace-nowrap">{h}</th>)}</tr></thead>
+            <thead><tr>{['', 'Technician', 'Installations', 'Repairs', 'Services', 'Earned', 'Collected from customer', 'Paid on Amazon', 'Net pay', ...(showSalary ? [`Salary · ${monthName(month)}`] : [])].map((h) => <th key={h} className="th whitespace-nowrap">{h}</th>)}</tr></thead>
             <tbody>
-              {isLoading ? <tr><td colSpan={showSalary ? 9 : 8} className="px-4 py-10 text-center text-sm text-slate-400">Loading…</td></tr>
-                : !shown.length ? <tr><td colSpan={showSalary ? 9 : 8} className="px-4 py-10 text-center text-sm text-slate-400">No completed jobs in this period</td></tr>
+              {isLoading ? <tr><td colSpan={showSalary ? 10 : 9} className="px-4 py-10 text-center text-sm text-slate-400">Loading…</td></tr>
+                : !shown.length ? <tr><td colSpan={showSalary ? 10 : 9} className="px-4 py-10 text-center text-sm text-slate-400">No completed jobs in this period</td></tr>
                 : shown.map((r) => (
                   <Fragment key={r.id}>
                     <tr className="table-row cursor-pointer" onClick={() => toggle(r.id)}>
                       <td className="td w-8 text-slate-400">{open.has(r.id) ? <ChevronDown size={15} /> : <ChevronRight size={15} />}</td>
                       <td className="td whitespace-nowrap"><span className="font-mono text-[10px] font-semibold text-brand-700 bg-brand-50 px-1.5 rounded mr-1.5">{r.info.tech_code || '—'}</span><b className="text-slate-800">{r.info.name}</b></td>
-                      <td className="td font-semibold tabular-nums">{r.jobs.length}</td>
+                      <td className="td tabular-nums whitespace-nowrap"><b>{r.installs}</b>{r.installs > 0 && <span className="block text-[10px] text-slate-400">{fmtMoney(r.installEarned)}</span>}</td>
+                      <td className="td tabular-nums whitespace-nowrap">{r.repairs ? <><b className="text-orange-700">{r.repairs}</b><span className="block text-[10px] text-slate-400">{fmtMoney(r.repairEarned)}</span></> : <span className="text-slate-300">—</span>}</td>
                       <td className="td text-xs text-slate-600 max-w-[260px]"><span className="line-clamp-2">{r.services}</span></td>
                       <td className="td tabular-nums whitespace-nowrap">{fmtMoney(r.earned)}{r.missing > 0 && <span title="Jobs without a rate" className="ml-1 text-[10px] font-bold text-amber-600">+{r.missing}?</span>}</td>
                       <td className="td tabular-nums text-amber-700 whitespace-nowrap">{r.collected ? `− ${fmtMoney(r.collected)}` : '—'}{r.collectedJobs > 0 && <span className="ml-1 text-[10px] text-slate-400">{r.collectedJobs} job{r.collectedJobs > 1 ? 's' : ''}</span>}</td>
@@ -246,12 +257,13 @@ export default function PayoutPage() {
                     {open.has(r.id) && (
                       <tr className="bg-slate-50/70">
                         <td />
-                        <td colSpan={showSalary ? 8 : 7} className="px-4 pb-4 pt-1">
+                        <td colSpan={showSalary ? 9 : 8} className="px-4 pb-4 pt-1">
                           <table className="w-full text-xs bg-white rounded-xl border border-slate-200 overflow-hidden">
-                            <thead><tr className="bg-slate-50 text-slate-500">{['Completed', 'Order ID', 'Customer', 'Installed / Service', 'Region', 'Payment', 'Rate', 'Collected', 'Net'].map((h) => <th key={h} className="px-3 py-2 text-left font-semibold">{h}</th>)}</tr></thead>
+                            <thead><tr className="bg-slate-50 text-slate-500">{['Completed', 'Type', 'Order ID', 'Customer', 'Installed / Repaired', 'Region', 'Payment', 'Rate', 'Collected', 'Net'].map((h) => <th key={h} className="px-3 py-2 text-left font-semibold">{h}</th>)}</tr></thead>
                             <tbody>{r.jobs.map((j) => (
                               <tr key={j.id} className="border-t border-slate-100">
                                 <td className="px-3 py-2 whitespace-nowrap">{fmtDayIST(j.closed_at)}</td>
+                                <td className="px-3 py-2">{j.type === 'REPAIR' ? <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700">REPAIR</span> : <span className="text-[10px] text-slate-500">Installation</span>}</td>
                                 <td className="px-3 py-2 font-mono text-brand-600">{j.order_id}</td>
                                 <td className="px-3 py-2">{j.customer_name}</td>
                                 <td className="px-3 py-2">{j.item || '—'}{j.installed_item && j.service && j.installed_item !== j.service && <div className="text-[10px] text-slate-400">Order: {j.service}</div>}</td>
@@ -272,7 +284,7 @@ export default function PayoutPage() {
                 ))}
               {shown.length > 1 && (
                 <tr className="bg-brand-50/50 font-semibold">
-                  <td /><td className="td">Total</td><td className="td tabular-nums">{tot.jobs}</td><td />
+                  <td /><td className="td">Total</td><td className="td tabular-nums">{tot.installs}</td><td className="td tabular-nums text-orange-700">{tot.repairs || '—'}</td><td />
                   <td className="td tabular-nums">{fmtMoney(tot.earned)}</td><td className="td tabular-nums">− {fmtMoney(tot.collected)}</td><td className="td tabular-nums">{tot.amazon ? `${tot.amazon} job${tot.amazon > 1 ? 's' : ''}` : '—'}</td>
                   <td className="td tabular-nums">{fmtMoney(tot.net)}</td>
                   {showSalary && <td className="td text-xs text-slate-500">{shown.filter((r) => paidBy.has(r.id) && salaryInfo(r).balance === 0).length} / {shown.length} paid</td>}

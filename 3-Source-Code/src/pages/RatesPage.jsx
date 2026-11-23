@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2, IndianRupee, MapPin, RefreshCw, AlertTriangle, Search } from 'lucide-react'
+import { Plus, Trash2, IndianRupee, MapPin, RefreshCw, AlertTriangle, Search, Wrench, Hammer } from 'lucide-react'
 import { supabase, rpc, errMsg } from '../lib/supabase'
 import { todayIST, fmtMoney } from '../lib/format'
 import { useToast } from '../context/ToastContext'
@@ -11,18 +11,24 @@ const TABS = [
   ['rate_outside', 'Outside Chennai', 'Any other pin code'],
 ]
 const key = (s) => String(s || '').trim().toLowerCase()
+const KINDS = [
+  ['INSTALLATION', 'Installation rates', 'Jobs on the Orders screen', Wrench],
+  ['REPAIR', 'Repair rates', 'Jobs on the Repairs screen', Hammer],
+]
+const kindOf = (r) => r.kind || 'INSTALLATION'
 
 /** Rate config: what the technician earns per job, by service, Within / Outside Chennai */
 export default function RatesPage() {
   const qc = useQueryClient()
   const { toast } = useToast()
   const { user } = useAuth()
+  const [kind, setKind] = useState('INSTALLATION')
   const [tab, setTab] = useState('rate_chennai')
   const [q, setQ] = useState('')
   const [newSvc, setNewSvc] = useState({ service: '', rate: '' })
   const [busy, setBusy] = useState(false)
 
-  const { data: rates = [], isLoading, error } = useQuery({
+  const { data: allRates = [], isLoading, error } = useQuery({
     queryKey: ['service-rates'],
     queryFn: async () => {
       const { data, error } = await supabase.from('service_rates').select('*').order('service')
@@ -32,18 +38,23 @@ export default function RatesPage() {
   })
   // Services that appear in orders, to spot ones without a rate
   const { data: orderServices = [] } = useQuery({
-    queryKey: ['order-services'],
+    queryKey: ['order-services', kind],
     staleTime: 10 * 60_000,
     queryFn: async () => {
-      // the latest 2000 orders are enough to find the services in use (keeps data use low)
-      const { data: rows = [], error } = await supabase.from('orders').select('service').eq('is_deleted', false).not('service', 'is', null).order('created_at', { ascending: false }).limit(2000)
+      // the latest 2000 orders / repairs are enough to find the services in use (keeps data use low)
+      const q = () => supabase.from('orders').select('service').eq('is_deleted', false).not('service', 'is', null).order('created_at', { ascending: false }).limit(2000)
+      let { data: rows = [], error } = await q().eq('job_type', kind)
+      if (error?.code === '42703') { if (kind === 'REPAIR') return []; ({ data: rows = [], error } = await q()) }   // older database
       if (error) throw error
       const m = new Map()
       for (const r of rows) { const k = key(r.service); if (k) m.set(k, { name: r.service.trim(), n: (m.get(k)?.n || 0) + 1 }) }
       return [...m.values()].sort((a, b) => b.n - a.n)
     },
   })
-  const refresh = () => qc.invalidateQueries({ queryKey: ['service-rates'] })
+  const refresh = () => { qc.invalidateQueries({ queryKey: ['service-rates'] }); qc.invalidateQueries({ queryKey: ['service-rates-names'] }) }
+  const rates = allRates.filter((r) => kindOf(r) === kind)
+  const kindReady = kind === 'INSTALLATION' || !allRates.length || 'kind' in allRates[0]
+  const K = KINDS.find((k) => k[0] === kind)
 
   const missing = useMemo(() => {
     const have = new Set(rates.map((r) => key(r.service)))
@@ -58,22 +69,23 @@ export default function RatesPage() {
     if (v === (row[tab] === null ? null : Number(row[tab]))) return
     const { error } = await supabase.from('service_rates').update({ [tab]: v, updated_by: user.id, updated_at: new Date().toISOString() }).eq('id', row.id)
     if (error) return toast(errMsg(error), 'error')
-    toast(`${row.service}: ${v === null ? 'rate cleared' : fmtMoney(v)} (${TABS.find((t) => t[0] === tab)[1]})`, 'success')
+    toast(`${row.service}: ${v === null ? 'rate cleared' : fmtMoney(v)} (${kind === 'REPAIR' ? 'Repair · ' : ''}${TABS.find((t) => t[0] === tab)[1]})`, 'success')
     refresh()
   }
   const rename = async (row, name) => {
     name = name.trim()
     if (!name || name === row.service) return
     const { error } = await supabase.from('service_rates').update({ service: name, updated_by: user.id, updated_at: new Date().toISOString() }).eq('id', row.id)
-    if (error) return toast(error.code === '23505' ? 'This service already exists' : errMsg(error), 'error')
+    if (error) return toast(error.code === '23505' ? `This name already exists in ${K[1]}` : errMsg(error), 'error')
     refresh()
   }
   const add = async (service, rate) => {
     service = service.trim()
-    if (!service) return toast('Type the service name exactly as in the orders', 'error')
+    if (!service) return toast(kind === 'REPAIR' ? 'Type the repair name' : 'Type the service name exactly as in the orders', 'error')
+    if (!kindReady) return toast('Repair rates are not set up yet: run update-2026-11-repairs.sql in Supabase', 'error')
     const v = rate === '' || rate === undefined ? null : Math.max(0, parseFloat(rate))
-    const { error } = await supabase.from('service_rates').insert({ service, [tab]: isNaN(v) ? null : v, updated_by: user.id })
-    if (error) return toast(error.code === '23505' ? 'This service already exists' : errMsg(error), 'error')
+    const { error } = await supabase.from('service_rates').insert({ service, [tab]: isNaN(v) ? null : v, updated_by: user.id, ...(kind === 'REPAIR' ? { kind } : {}) })
+    if (error) return toast(error.code === '23505' ? `This name already exists in ${K[1]}` : errMsg(error), 'error')
     setNewSvc({ service: '', rate: '' }); refresh()
   }
   const remove = async (row) => {
@@ -105,10 +117,20 @@ export default function RatesPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-heading font-extrabold text-slate-900">Rate Config</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Technician rate per job, by service — used for Technician Payout. Technicians pick from this list (“What did you install?”) when they complete a job.</p>
+          <p className="text-sm text-slate-500 mt-0.5">Technician rate per job — used for Technician Payout. Installation rates are for Orders (“What did you install?”), Repair rates for Repairs (“What did you repair?”).</p>
         </div>
         <button onClick={applyToCompleted} disabled={busy} className="btn-secondary text-xs"><RefreshCw size={13} className={busy ? 'animate-spin' : ''} /> Apply rates to this month's completed jobs</button>
       </div>
+
+      <div className="flex gap-1 p-1 bg-slate-100 rounded-2xl w-fit">
+        {KINDS.map(([k, l, hint, Icon]) => (
+          <button key={k} onClick={() => { setKind(k); setQ('') }} className={`px-4 py-2 rounded-xl text-left transition ${kind === k ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}>
+            <span className="flex items-center gap-1.5 text-sm font-bold"><Icon size={15} className={kind === k ? (k === 'REPAIR' ? 'text-orange-600' : 'text-brand-600') : ''} /> {l}</span>
+            <span className="block text-[10px] font-medium text-slate-400">{hint}</span>
+          </button>
+        ))}
+      </div>
+      {!kindReady && <div className="card p-3 text-sm text-amber-900 bg-amber-50/70 border-amber-300/70 flex items-center gap-2"><AlertTriangle size={15} /> Repair rates need <b>update-2026-11-repairs.sql</b> — run it in Supabase → SQL Editor, then reload.</div>}
 
       <div className="flex gap-2 flex-wrap">
         {TABS.map(([k, l, hint]) => (
@@ -121,14 +143,14 @@ export default function RatesPage() {
 
       <div className="card p-0 overflow-hidden">
         <div className="px-4 py-3 border-b border-slate-100 flex flex-wrap items-center gap-3">
-          <p className="text-sm font-heading font-bold text-slate-800 flex-1">{TABS.find((t) => t[0] === tab)[1]} rates <span className="text-slate-400 font-medium">· {rates.length} services{unset ? ` · ${unset} without a rate` : ''}</span></p>
+          <p className="text-sm font-heading font-bold text-slate-800 flex-1">{kind === 'REPAIR' ? 'Repair' : 'Installation'} · {TABS.find((t) => t[0] === tab)[1]} rates <span className="text-slate-400 font-medium">· {rates.length} {kind === 'REPAIR' ? 'repairs' : 'services'}{unset ? ` · ${unset} without a rate` : ''}</span></p>
           <div className="relative w-full sm:w-64">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input className="input pl-9 py-2" placeholder="Search service…" value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
         </div>
         <table className="w-full">
-          <thead><tr>{['Service (exactly as in the orders)', 'Rate ₹', ''].map((h) => <th key={h} className="th">{h}</th>)}</tr></thead>
+          <thead><tr>{[kind === 'REPAIR' ? 'Repair (technician picks this on HT Jobs)' : 'Service (exactly as in the orders)', 'Rate ₹', ''].map((h) => <th key={h} className="th">{h}</th>)}</tr></thead>
           <tbody>
             {isLoading ? <tr><td colSpan={3} className="px-4 py-8 text-center text-sm text-slate-400">Loading…</td></tr>
               : list.map((r) => (
@@ -145,9 +167,9 @@ export default function RatesPage() {
                   <td className="td w-12"><button onClick={() => remove(r)} title="Delete service" className="p-1.5 rounded-lg text-slate-300 hover:text-red-600 hover:bg-red-50"><Trash2 size={14} /></button></td>
                 </tr>
               ))}
-            {!isLoading && !list.length && <tr><td colSpan={3} className="px-4 py-8 text-center text-sm text-slate-400">{rates.length ? 'No service matches' : 'No services yet — add them below'}</td></tr>}
+            {!isLoading && !list.length && <tr><td colSpan={3} className="px-4 py-8 text-center text-sm text-slate-400">{rates.length ? 'Nothing matches' : kind === 'REPAIR' ? 'No repair rates yet — add them below, e.g. TV panel repair' : 'No services yet — add them below'}</td></tr>}
             <tr className="bg-slate-50/60">
-              <td className="td"><input className="input py-2" placeholder="New service, e.g. TV Installation" value={newSvc.service} onChange={(e) => setNewSvc((p) => ({ ...p, service: e.target.value }))} /></td>
+              <td className="td"><input className="input py-2" placeholder={kind === 'REPAIR' ? 'New repair, e.g. TV panel replacement' : 'New service, e.g. TV Installation'} value={newSvc.service} onChange={(e) => setNewSvc((p) => ({ ...p, service: e.target.value }))} /></td>
               <td className="td"><input type="number" min="0" className="input py-2 text-right" placeholder="₹" value={newSvc.rate} onChange={(e) => setNewSvc((p) => ({ ...p, rate: e.target.value }))}
                 onKeyDown={(e) => e.key === 'Enter' && add(newSvc.service, newSvc.rate)} /></td>
               <td className="td"><button onClick={() => add(newSvc.service, newSvc.rate)} className="btn-primary text-xs px-2.5 py-2"><Plus size={14} /></button></td>
@@ -158,7 +180,7 @@ export default function RatesPage() {
 
       {missing.length > 0 && (
         <div className="card p-4 border-amber-300/70 bg-amber-50/70">
-          <p className="text-sm font-heading font-bold text-amber-900 flex items-center gap-2"><AlertTriangle size={15} /> Services in your orders without a rate ({missing.length})</p>
+          <p className="text-sm font-heading font-bold text-amber-900 flex items-center gap-2"><AlertTriangle size={15} /> {kind === 'REPAIR' ? 'Services in your repairs' : 'Services in your orders'} without a rate ({missing.length})</p>
           <p className="text-xs text-amber-800/80 mt-0.5 mb-3">Jobs with these services show "Rate not set" in Technician Payout. Click to add, then type the rate.</p>
           <div className="flex flex-wrap gap-2">
             {missing.slice(0, 40).map((m) => (

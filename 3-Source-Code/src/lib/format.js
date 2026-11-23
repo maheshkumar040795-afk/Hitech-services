@@ -49,6 +49,14 @@ export const STATUS = {
 }
 /** Cancelled order = the owner installed it himself; shown in place of the technician */
 export const OWN_INSTALL = 'Own Installation'
+export const isRepair = (o) => o?.job_type === 'REPAIR'
+/** What a cancelled job shows in place of the technician */
+export const ownLabel = (o) => (isRepair(o) ? 'Own Repair' : OWN_INSTALL)
+/** Orders screen = installations, Repairs screen = repairs (same table, column job_type) */
+export const JOB_TYPES = {
+  INSTALLATION: { key: 'INSTALLATION', title: 'Orders', one: 'order', many: 'orders', One: 'Order', file: 'hitech-orders', own: OWN_INSTALL, did: 'installed', item: 'Installed item' },
+  REPAIR:       { key: 'REPAIR', title: 'Repairs', one: 'repair', many: 'repairs', One: 'Repair', file: 'hitech-repairs', own: 'Own Repair', did: 'repaired', item: 'Repair done' },
+}
 /** Statuses that still need a visit */
 export const OPEN_STATUSES = ['PENDING', 'RESCHEDULED']
 // Payment on a completed job: the technician either collected the amount from the customer, or the customer paid on Amazon.

@@ -95,7 +95,8 @@ function AppRoutes() {
 
       <Route path="/" element={<OfficeRoute><AppShell /></OfficeRoute>}>
         <Route index element={<DashboardPage />} />
-        <Route path="orders" element={<OrdersPage />} />
+        <Route path="orders" element={<OrdersPage key="orders" />} />
+        <Route path="repairs" element={<OrdersPage key="repairs" jobType="REPAIR" />} />
         <Route path="technicians" element={<TechniciansPage />} />
         <Route path="billing" element={<BillingPage />} />
         <Route path="settings" element={<SettingsPage />} />

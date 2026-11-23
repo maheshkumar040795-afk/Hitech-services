@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import { Search, Upload, Download, Eye, MessageSquare, X, ChevronLeft, ChevronRight, Plus, FileDown, Trash2, AlertTriangle, CheckCircle2, Pencil, MapPin, CalendarClock, Save, Sheet, Loader2, Home, Camera } from 'lucide-react'
 import { supabase, rpc, errMsg, fetchAll, safeSearch, fetchSheetViaFunction } from '../lib/supabase'
-import { fmtDate, fmtDateTime, fmtDayIST, STATUS, PAYMENT, payLabel, todayIST, techLabel, isUrl, OWN_INSTALL } from '../lib/format'
+import { fmtDate, fmtDateTime, fmtDayIST, STATUS, PAYMENT, payLabel, todayIST, techLabel, isUrl, ownLabel, JOB_TYPES } from '../lib/format'
 import { parseOrdersFile, parseOrdersBuffer, fetchGoogleSheet, downloadOrdersTemplate, downloadXlsx } from '../lib/excel'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
@@ -16,8 +16,13 @@ const LIMIT = 25
 // '*' so new columns (location_url, rescheduled_date, payment_mode) come through without breaking older databases
 const SELECT = '*, technician:technicians(id,name), modifier:profiles!orders_modified_by_fkey(name)'
 
-function applyFilters(q, f) {
+// Older database without the job_type column (update-2026-11-repairs.sql not run yet): Orders keeps working
+let noJobType = false
+const missingJobType = (e) => e?.code === '42703' && /job_type/.test(e?.message || '')
+
+function applyFilters(q, f, jobType = 'INSTALLATION') {
   q = q.eq('is_deleted', false)
+  if (!noJobType) q = q.eq('job_type', jobType)
   if (f.status) q = q.eq('status', f.status)
   if (f.tech === 'none') q = q.is('technician_id', null)
   else if (f.tech) q = q.eq('technician_id', f.tech)
@@ -28,15 +33,22 @@ function applyFilters(q, f) {
   return q
 }
 
+/** Item names from Rate Config for this job type (installation list or repair list) */
+async function rateItems(jobType) {
+  const { data } = await supabase.from('service_rates').select('*').order('service')
+  return (data || []).filter((r) => (r.kind || 'INSTALLATION') === jobType).map((r) => r.service)
+}
+
 // ── Upload: preview → import → result ─────────────────────────────────────────
-function UploadModal({ file, parsed, onClose, onDone }) {
+function UploadModal({ file, parsed, onClose, onDone, jobType = 'INSTALLATION' }) {
+  const J = JOB_TYPES[jobType]
   const { toast } = useToast()
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)
   const run = async () => {
     setBusy(true)
     try {
-      const r = await rpc('import_orders', { p_rows: parsed.rows, p_filename: file.name })
+      const r = await rpc('import_orders', { p_rows: parsed.rows, p_filename: file.name, ...(jobType === 'REPAIR' ? { p_job_type: 'REPAIR' } : {}) })
       setResult(r)
       onDone()
       toast(`Upload done: ${r.created} new, ${r.updated} updated${r.failed ? `, ${r.failed} failed` : ''}`, r.failed ? 'info' : 'success')
@@ -44,7 +56,7 @@ function UploadModal({ file, parsed, onClose, onDone }) {
   }
   const preview = parsed.rows.slice(0, 5)
   return (
-    <Modal title={result ? 'Upload complete' : 'Upload orders'} subtitle={file.name} onClose={onClose} width="max-w-2xl">
+    <Modal title={result ? 'Upload complete' : `Upload ${J.many}`} subtitle={file.name} onClose={onClose} width="max-w-2xl">
       {!result ? (
         <>
           <p className="text-sm text-slate-700 mb-2"><b>{parsed.rows.length}</b> rows found. Columns detected:</p>
@@ -135,7 +147,8 @@ function GoogleSheetModal({ onClose, onParsed }) {
 const ORDER_FIELDS = ['order_id', 'order_date', 'state', 'vendor_name', 'customer_name', 'phone_no', 'service', 'brand', 'product_type', 'location', 'address', 'pin_code', 'location_url', 'technician_id']
 
 /** Add a new order, or edit an existing one to fill in missed details */
-function OrderFormModal({ order, techs, onClose, onSaved }) {
+function OrderFormModal({ order, techs, onClose, onSaved, jobType = 'INSTALLATION' }) {
+  const J = JOB_TYPES[jobType]
   const { toast } = useToast()
   const editing = !!order
   const [f, setF] = useState(() => {
@@ -148,8 +161,8 @@ function OrderFormModal({ order, techs, onClose, onSaved }) {
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }))
   const completed = order?.status === 'COMPLETED'
   const { data: items = [] } = useQuery({
-    queryKey: ['service-rates-names'], enabled: completed, staleTime: 5 * 60_000,
-    queryFn: async () => { const { data } = await supabase.from('service_rates').select('service').order('service'); return (data || []).map((r) => r.service) },
+    queryKey: ['service-rates-names', jobType], enabled: completed, staleTime: 5 * 60_000,
+    queryFn: () => rateItems(jobType),
   })
   const save = async (e) => {
     e.preventDefault()
@@ -158,7 +171,8 @@ function OrderFormModal({ order, techs, onClose, onSaved }) {
     if (editing && !row.location_url && !order.location_url) delete row.location_url   // older database without the column
     if (!row.product_type && !(editing && 'product_type' in order)) delete row.product_type
     for (const k of ['state', 'vendor_name']) if (!row[k] && !(editing && k in order)) delete row[k]   // older database without the columns
-    if (order?.status === 'CANCELLED') delete row.technician_id   // cancelled = own installation, no technician
+    if (order?.status === 'CANCELLED') delete row.technician_id   // cancelled = own installation / repair, no technician
+    if (!editing && jobType === 'REPAIR') row.job_type = 'REPAIR'
     if (editing && 'region' in order && f.region) row.region = f.region
     const cc = parseFloat(f.collect_amount)
     if (!editing || 'collect_amount' in order) row.collect_amount = cc > 0 ? Math.round(cc * 100) / 100 : null
@@ -177,11 +191,11 @@ function OrderFormModal({ order, techs, onClose, onSaved }) {
       ;({ error } = editing ? await supabase.from('orders').update(rest).eq('id', order.id) : await supabase.from('orders').insert(rest))
     }
     setBusy(false)
-    if (error) return toast(error.code === '23505' ? 'This Order ID already exists' : errMsg(error), 'error')
-    toast(editing ? 'Order updated' : 'Order added', 'success'); onSaved(); onClose()
+    if (error) return toast(error.code === '23505' ? 'This Order ID already exists (in Orders or Repairs)' : missingJobType(error) ? 'Repairs are not set up yet: run update-2026-11-repairs.sql in Supabase' : errMsg(error), 'error')
+    toast(editing ? `${J.One} updated` : `${J.One} added`, 'success'); onSaved(); onClose()
   }
   return (
-    <Modal title={editing ? 'Edit order' : 'New order'} subtitle={editing ? `${order.order_id} · fill in or correct details` : 'For jobs that are not in the Excel file'} onClose={onClose} width="max-w-xl">
+    <Modal title={editing ? `Edit ${J.one}` : `New ${J.one}`} subtitle={editing ? `${order.order_id} · fill in or correct details` : 'For jobs that are not in the Excel file'} onClose={onClose} width="max-w-xl">
       <form onSubmit={save} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Order ID *"><input className="input" value={f.order_id} onChange={set('order_id')} required /></Field>
         <Field label="Order Date *"><input type="date" className="input" value={f.order_date} onChange={set('order_date')} required /></Field>
@@ -210,7 +224,7 @@ function OrderFormModal({ order, techs, onClose, onSaved }) {
             <input type="number" min="0" step="0.01" inputMode="decimal" className="input" placeholder="e.g. 1000" value={f.collect_amount ?? ''} onChange={set('collect_amount')} /></Field></div>
         )}
         <div className="sm:col-span-2"><Field label="Assign Technician">
-          {order?.status === 'CANCELLED' ? <p className="input bg-slate-50 text-slate-600 flex items-center gap-2"><Home size={14} /> {OWN_INSTALL} (order cancelled)</p> :
+          {order?.status === 'CANCELLED' ? <p className="input bg-slate-50 text-slate-600 flex items-center gap-2"><Home size={14} /> {J.own} ({J.one} cancelled)</p> :
           <TechPicker techs={techs} value={f.technician_id || ''} onChange={(v) => setF((p) => ({ ...p, technician_id: v }))}
             extra={[{ value: '', label: '— Unassigned —' }]} placeholder="— Unassigned —" className="w-full" pinCode={f.pin_code} location={f.location} />}</Field></div>
         {completed && <>
@@ -228,7 +242,7 @@ function OrderFormModal({ order, techs, onClose, onSaved }) {
         </>}
         <div className="sm:col-span-2 flex justify-end gap-2 pt-2">
           <button type="button" onClick={onClose} className="btn-secondary text-xs">Cancel</button>
-          <button disabled={busy} className="btn-primary text-xs">{editing ? <Save size={13} /> : <Plus size={13} />} {busy ? 'Saving…' : editing ? 'Save changes' : 'Add Order'}</button>
+          <button disabled={busy} className="btn-primary text-xs">{editing ? <Save size={13} /> : <Plus size={13} />} {busy ? 'Saving…' : editing ? 'Save changes' : `Add ${J.One}`}</button>
         </div>
       </form>
     </Modal>
@@ -265,11 +279,12 @@ function RescheduleModal({ orders, onClose, onSave }) {
  * Office marks a job Completed on behalf of the technician: ask the same two things HT Jobs asks,
  * so every completed job has an installed item (→ rate from Rate Config) and a payment (→ deducted in Payout).
  */
-function CompleteModal({ order, techs, onClose, onSaved }) {
+function CompleteModal({ order, techs, onClose, onSaved, jobType = 'INSTALLATION' }) {
+  const J = JOB_TYPES[jobType]
   const { toast } = useToast()
   const { data: items = [], isLoading } = useQuery({
-    queryKey: ['service-rates-names'], staleTime: 5 * 60_000,
-    queryFn: async () => { const { data } = await supabase.from('service_rates').select('service').order('service'); return (data || []).map((r) => r.service) },
+    queryKey: ['service-rates-names', jobType], staleTime: 5 * 60_000,
+    queryFn: () => rateItems(jobType),
   })
   const norm = (x) => String(x || '').trim().toLowerCase()
   const [item, setItem] = useState(order.installed_item || '')
@@ -309,7 +324,7 @@ function CompleteModal({ order, techs, onClose, onSaved }) {
       <form onSubmit={save} className="space-y-4">
         <p className="text-xs text-slate-500">Service on the order: <b className="text-slate-700">{order.service || '—'}</b> · Technician: <b className="text-slate-700">{tech ? techLabel(tech) : 'not assigned'}</b></p>
         {!tech && <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-2.5 flex gap-2"><AlertTriangle size={14} className="flex-shrink-0 mt-0.5" /> No technician is assigned, so this job will not appear in Technician Payout. Assign the technician first if it should.</p>}
-        <Field label="1. What was installed? *" hint="The technician's rate is taken from Rate Config for this item.">
+        <Field label={`1. What was ${J.did}? *`} hint={`The technician's rate is taken from the ${jobType === 'REPAIR' ? 'Repair' : 'Installation'} list in Rate Config.`}>
           {isLoading ? <div className="h-10 rounded-xl bg-slate-100 animate-pulse" /> : items.length ? (
             <select className="input" value={item} onChange={(e) => setItem(e.target.value)} required autoFocus>
               <option value="">— Select —</option>
@@ -336,7 +351,8 @@ function CompleteModal({ order, techs, onClose, onSaved }) {
   )
 }
 
-export default function OrdersPage() {
+export default function OrdersPage({ jobType = 'INSTALLATION' }) {
+  const J = JOB_TYPES[jobType]
   const qc = useQueryClient()
   const { toast } = useToast()
   const { isAdmin } = useAuth()
@@ -361,12 +377,17 @@ export default function OrdersPage() {
   useEffect(() => { const t = setTimeout(() => { setF((p) => ({ ...p, search: searchInput })); setPage(1) }, 400); return () => clearTimeout(t) }, [searchInput])
   const setFilter = (k) => (e) => { setF((p) => ({ ...p, [k]: e.target.value })); setPage(1); setSelected(new Set()) }
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['orders', f, page],
+  const { data, isLoading, error: loadError } = useQuery({
+    queryKey: ['orders', jobType, f, page],
     queryFn: async () => {
-      const { data, count, error } = await applyFilters(supabase.from('orders').select(SELECT, { count: 'exact' }), f)
+      const run = () => applyFilters(supabase.from('orders').select(SELECT, { count: 'exact' }), f, jobType)
         .order('order_date', { ascending: false }).order('created_at', { ascending: false })
         .range((page - 1) * LIMIT, page * LIMIT - 1)
+      let { data, count, error } = await run()
+      if (missingJobType(error)) {
+        if (jobType === 'REPAIR') throw new Error('Repairs are not set up yet: run update-2026-11-repairs.sql in Supabase → SQL Editor')
+        noJobType = true; ({ data, count, error } = await run())
+      }
       if (error) throw error
       return { orders: data, total: count || 0 }
     },
@@ -391,11 +412,11 @@ export default function OrdersPage() {
     if (!list.length) return
     const withTech = list.filter((o) => o.technician_id).length
     const msg = list.length === 1
-      ? `Cancel ${list[0].order_id}? It will show as "${OWN_INSTALL}"${withTech ? ' and be removed from the technician\'s HT Jobs and Payout' : ''}.`
-      : `Cancel ${list.length} orders? They will show as "${OWN_INSTALL}"${withTech ? ` and ${withTech} will be removed from the technicians' HT Jobs and Payout` : ''}.`
+      ? `Cancel ${list[0].order_id}? It will show as "${J.own}"${withTech ? ' and be removed from the technician\'s HT Jobs and Payout' : ''}.`
+      : `Cancel ${list.length} ${J.many}? They will show as "${J.own}"${withTech ? ` and ${withTech} will be removed from the technicians' HT Jobs and Payout` : ''}.`
     if (!confirm(msg)) return
     await update(list.map((o) => o.id), { status: 'CANCELLED', technician_id: null },
-      list.length === 1 ? `${list[0].order_id} → Cancelled · ${OWN_INSTALL}` : `${list.length} orders → Cancelled · ${OWN_INSTALL}`)
+      list.length === 1 ? `${list[0].order_id} → Cancelled · ${J.own}` : `${list.length} ${J.many} → Cancelled · ${J.own}`)
   }
 
   const onFile = async (e) => {
@@ -407,12 +428,12 @@ export default function OrdersPage() {
   const exportFiltered = async () => {
     setBusy(true)
     try {
-      const rows = await fetchAll(() => applyFilters(supabase.from('orders').select(SELECT), f).order('order_date', { ascending: false }))
-      downloadXlsx(`hitech-orders-${todayIST()}.xlsx`, [{ name: 'Orders', rows: rows.map((o) => ({
+      const rows = await fetchAll(() => applyFilters(supabase.from('orders').select(SELECT), f, jobType).order('order_date', { ascending: false }))
+      downloadXlsx(`${J.file}-${todayIST()}.xlsx`, [{ name: J.title, rows: rows.map((o) => ({
         DATE: fmtDate(o.order_date), STATE: o.state || '', 'VENDOR NAME': o.vendor_name || '', SERVICE_ORDER_ID: o.order_id, 'CUSTOMER NAME': o.customer_name, 'PHONE NUMBER': o.phone_no || '',
         SERVICE: o.service || '', BRAND: o.brand || '', PRODUCT_TYPE: o.product_type || '', LOCATION: o.location || '', 'PIN CODE': o.pin_code || '',
-        TECHNICIAN: o.status === 'CANCELLED' ? OWN_INSTALL : o.technician?.name || '', STATUS: STATUS[o.status]?.label || o.status,
-        'Sheet Status': o.source_status || '', 'Installed Item': o.installed_item || '', 'Technician ID': techs.find((t) => t.id === o.technician_id)?.tech_code || '',
+        TECHNICIAN: o.status === 'CANCELLED' ? ownLabel(o) : o.technician?.name || '', STATUS: STATUS[o.status]?.label || o.status,
+        'Sheet Status': o.source_status || '', [J.item]: o.installed_item || '', 'Technician ID': techs.find((t) => t.id === o.technician_id)?.tech_code || '',
         'Rescheduled To': o.rescheduled_date ? fmtDate(o.rescheduled_date) : '', Address: o.address || '', 'Google Location': o.location_url || '',
         'Completed On': o.status === 'COMPLETED' && o.closed_at ? fmtDayIST(o.closed_at) : '', 'Not Done On': o.status === 'REJECTED' && o.closed_at ? fmtDayIST(o.closed_at) : '', 'Cancelled On': o.status === 'CANCELLED' && o.closed_at ? fmtDayIST(o.closed_at) : '',
         'Photos': (o.photos || []).length, 'Photo Links': (o.photos || []).join(' '), 'Cash Collect': Number(o.collect_amount || 0), 'Collected from customer': Number(o.cod_amount || 0), Payment: payLabel(o), Comments: o.comments || '',
@@ -433,24 +454,24 @@ export default function OrdersPage() {
   return (
     <div className="space-y-4">
       {detailId && <OrderDrawer orderId={detailId} onClose={() => setDetailId(null)} />}
-      {upload && <UploadModal {...upload} onClose={() => setUpload(null)} onDone={refresh} />}
+      {upload && <UploadModal {...upload} jobType={jobType} onClose={() => setUpload(null)} onDone={refresh} />}
       {showSheet && <GoogleSheetModal onClose={() => setShowSheet(false)} onParsed={(u) => { setShowSheet(false); setUpload(u) }} />}
-      {showNew && <OrderFormModal techs={techs} onClose={() => setShowNew(false)} onSaved={refresh} />}
-      {editOrder && <OrderFormModal order={editOrder} techs={techs} onClose={() => setEditOrder(null)} onSaved={refresh} />}
-      {completing && <CompleteModal order={completing} techs={techs} onClose={() => setCompleting(null)} onSaved={() => { refresh(); setSelected(new Set()) }} />}
+      {showNew && <OrderFormModal techs={techs} jobType={jobType} onClose={() => setShowNew(false)} onSaved={refresh} />}
+      {editOrder && <OrderFormModal order={editOrder} techs={techs} jobType={jobType} onClose={() => setEditOrder(null)} onSaved={refresh} />}
+      {completing && <CompleteModal order={completing} techs={techs} jobType={jobType} onClose={() => setCompleting(null)} onSaved={() => { refresh(); setSelected(new Set()) }} />}
       {resched && <RescheduleModal orders={resched} onClose={() => setResched(null)}
-        onSave={async (date) => { await update(resched.map((o) => o.id), { status: 'RESCHEDULED', rescheduled_date: date }, `${resched.length === 1 ? resched[0].order_id : resched.length + ' orders'} rescheduled to ${fmtDate(date)}`); setResched(null); setSelected(new Set()) }} />}
+        onSave={async (date) => { await update(resched.map((o) => o.id), { status: 'RESCHEDULED', rescheduled_date: date }, `${resched.length === 1 ? resched[0].order_id : resched.length + ' ' + J.many} rescheduled to ${fmtDate(date)}`); setResched(null); setSelected(new Set()) }} />}
       <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={onFile} />
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-heading font-extrabold text-slate-900">Orders</h1>
-          <p className="text-sm text-slate-500 mt-0.5">{total} {filtersOn ? 'matching' : 'total'} orders</p>
+          <h1 className="text-2xl font-heading font-extrabold text-slate-900">{J.title}</h1>
+          <p className="text-sm text-slate-500 mt-0.5">{total} {filtersOn ? 'matching' : 'total'} {J.many}{jobType === 'REPAIR' ? ' · repair rates from Rate Config → Repair' : ''}</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <button onClick={downloadOrdersTemplate} className="btn-secondary text-xs"><Download size={13} /> Template</button>
           <button onClick={exportFiltered} disabled={busy} className="btn-secondary text-xs"><FileDown size={13} /> Export</button>
-          <button onClick={() => setShowNew(true)} className="btn-secondary text-xs"><Plus size={13} /> New Order</button>
+          <button onClick={() => setShowNew(true)} className="btn-secondary text-xs"><Plus size={13} /> New {J.One}</button>
           <button onClick={() => setShowSheet(true)} className="btn-secondary text-xs"><Sheet size={13} /> Google Sheet</button>
           <button onClick={() => fileRef.current?.click()} className="btn-primary text-xs"><Upload size={13} /> Upload Excel</button>
         </div>
@@ -462,7 +483,7 @@ export default function OrdersPage() {
           <input className="input pl-9 py-2" placeholder="Search order ID, customer, phone, location, pincode…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
         </div>
         <select className="input w-auto py-2" value={f.status} onChange={setFilter('status')}>
-          <option value="">All statuses</option><option value="PENDING">Pending</option><option value="RESCHEDULED">Rescheduled</option><option value="COMPLETED">Completed</option><option value="REJECTED">Rejected</option><option value="CANCELLED">Cancelled (own installation)</option>
+          <option value="">All statuses</option><option value="PENDING">Pending</option><option value="RESCHEDULED">Rescheduled</option><option value="COMPLETED">Completed</option><option value="REJECTED">Rejected</option><option value="CANCELLED">Cancelled ({J.own.toLowerCase()})</option>
         </select>
         <TechPicker techs={techs} value={f.tech} activeOnly={false} showLoad={false} placeholder="All technicians" className="w-auto min-w-[180px]"
           extra={[{ value: '', label: 'All technicians' }, { value: 'none', label: '⚠ Unassigned' }]}
@@ -518,7 +539,7 @@ export default function OrdersPage() {
               {isLoading ? Array.from({ length: 6 }).map((_, i) => (
                 <tr key={i} className="border-b border-slate-50"><td colSpan={20} className="px-3 py-3"><div className="h-4 bg-slate-100 animate-pulse rounded" /></td></tr>
               )) : orders.length === 0 ? (
-                <tr><td colSpan={20} className="px-3 py-12 text-center text-sm text-slate-400">No orders found</td></tr>
+                <tr><td colSpan={20} className="px-3 py-12 text-center text-sm text-slate-400">{loadError ? <span className="text-red-600">{errMsg(loadError)}</span> : `No ${J.many} found`}</td></tr>
               ) : orders.map((o) => {
                 const sc = STATUS[o.status] || STATUS.PENDING
                 return (
@@ -545,7 +566,7 @@ export default function OrdersPage() {
                     <td className="px-3 py-2">
                       {o.status === 'CANCELLED' ? (
                         <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-300 whitespace-nowrap" title="Order cancelled: the owner installed it himself">
-                          <Home size={11} /> {OWN_INSTALL}</span>
+                          <Home size={11} /> {J.own}</span>
                       ) : <TechPicker size="sm" techs={techs} value={o.technician_id || ''} disabled={busy} danger={!o.technician_id}
                         placeholder="Unassigned" extra={[{ value: '', label: 'Unassigned' }]} pinCode={o.pin_code} location={o.location}
                         onChange={(v) => {
