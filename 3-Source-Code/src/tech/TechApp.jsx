@@ -463,14 +463,14 @@ function AccountSheet({ onClose }) {
 }
 
 // ── Salary card (header) ──────────────────────────────────────────────────────
-function SalaryCard({ label, m, current }) {
+function SalaryCard({ label, m, current, onOpen }) {
   const month = m?.month ? fmtDate(m.month, { month: 'short', year: 'numeric' }) : ''
   const day = Number(todayIST().slice(8, 10))
   const paid = m && m.paid !== null && m.paid !== undefined
   const net = m ? (paid ? Number(m.balance) : Number(m.net)) : 0
   return (
-    <div className="glass-dark rounded-2xl px-3 py-2.5">
-      <p className="text-[10px] font-semibold text-slate-300/90 uppercase tracking-wide">{label}</p>
+    <button type="button" onClick={m ? onOpen : undefined} className="glass-dark rounded-2xl px-3 py-2.5 text-left w-full flex flex-col justify-start active:scale-[.98] transition-transform">
+      <p className="text-[10px] font-semibold text-slate-300/90 uppercase tracking-wide flex items-center justify-between">{label} {m && <ChevronRight size={12} className="opacity-60" />}</p>
       <p className="text-[11px] text-slate-400 -mt-0.5">{month}{month && (current ? ` · 1 – ${day}` : '')}</p>
       {!m ? <div className="h-12 mt-1 rounded-lg bg-white/10 animate-pulse" /> : <>
         <div className="mt-1 space-y-0.5 text-[11px] tabular-nums">
@@ -481,6 +481,8 @@ function SalaryCard({ label, m, current }) {
               <div className="flex justify-between gap-1"><span className="text-slate-300 truncate">Repair <span className="text-slate-400">×{m.repairs}</span></span><span className="font-semibold text-orange-200">{fmtMoney(m.repair_earned)}</span></div>
             </>}
           <div className="flex justify-between"><span className="text-slate-300">Collected</span><span className="font-semibold text-amber-300">− {fmtMoney(m.collected)}</span></div>
+          {Number(m.petrol) > 0 && <div className="flex justify-between"><span className="text-slate-300">Petrol</span><span className="font-semibold text-sky-300">+ {fmtMoney(m.petrol)}</span></div>}
+          {Number(m.advance) > 0 && <div className="flex justify-between"><span className="text-slate-300">Advance</span><span className="font-semibold text-rose-300">− {fmtMoney(m.advance)}</span></div>}
           {paid && <div className="flex justify-between"><span className="text-slate-300">Paid</span><span className="font-semibold text-emerald-300">− {fmtMoney(m.paid)}</span></div>}
         </div>
         <div className="mt-1.5 pt-1.5 border-t border-white/10">
@@ -488,7 +490,58 @@ function SalaryCard({ label, m, current }) {
           <p className="text-[10px] text-slate-300/90 mt-0.5">{paid && net === 0 ? `Salary paid ✓ ${fmtDayIST(m.paid_at, { day: 'numeric', month: 'short' })}` : net < 0 ? 'You owe office' : 'Net salary'}</p>
         </div>
       </>}
+    </button>
+  )
+}
+
+// ── Salary details (tap a month card) ─────────────────────────────────────────
+function SalarySheet({ label, m, onClose }) {
+  const month = fmtDate(m.month, { month: 'long', year: 'numeric' })
+  const paid = m.paid !== null && m.paid !== undefined
+  const Row = ({ l, v, c = 'text-slate-900', sub }) => (
+    <div className="flex items-start justify-between gap-3 py-2.5">
+      <div><p className="text-[15px] text-slate-700">{l}</p>{sub && <p className="text-xs text-slate-400">{sub}</p>}</div>
+      <p className={`text-[15px] font-bold tabular-nums whitespace-nowrap ${c}`}>{v}</p>
     </div>
+  )
+  const entries = m.entries || []
+  return (
+    <Sheet title={`${label} · ${month}`} onClose={onClose}>
+      <div className="px-5 pt-2 pb-8">
+        <div className="divide-y divide-slate-100">
+          {m.repairs === undefined ? <Row l="Earned" v={fmtMoney(m.earned)} sub={`${m.jobs} job${m.jobs === 1 ? '' : 's'} completed`} /> : <>
+            <Row l="Installations" sub={`${m.installs} job${m.installs === 1 ? '' : 's'}`} v={fmtMoney(m.install_earned)} />
+            <Row l="Repairs" sub={`${m.repairs} job${m.repairs === 1 ? '' : 's'}`} v={fmtMoney(m.repair_earned)} />
+          </>}
+          <Row l="Collected from customers" sub="Cash / UPI you received" v={`− ${fmtMoney(m.collected)}`} c="text-amber-600" />
+          {m.petrol !== undefined && <Row l="Petrol allowance" v={`+ ${fmtMoney(m.petrol)}`} c="text-sky-700" />}
+          {m.advance !== undefined && <Row l="Salary advance" v={`− ${fmtMoney(m.advance)}`} c="text-rose-600" />}
+          <div className="flex items-center justify-between py-3">
+            <p className="text-base font-bold text-slate-900">Net salary</p>
+            <p className={`text-2xl font-heading font-extrabold tabular-nums ${Number(m.net) < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{Number(m.net) < 0 ? `− ${fmtMoney(-m.net)}` : fmtMoney(m.net)}</p>
+          </div>
+          {paid && <Row l="Salary paid" sub={fmtDayIST(m.paid_at, { day: 'numeric', month: 'short', year: 'numeric' })} v={`− ${fmtMoney(m.paid)}`} c="text-emerald-700" />}
+          {paid && <Row l="Balance" v={fmtMoney(m.balance)} c={Number(m.balance) === 0 ? 'text-emerald-700' : 'text-slate-900'} />}
+        </div>
+        {entries.length > 0 && (
+          <div className="mt-4">
+            <p className="text-xs font-bold uppercase tracking-wide text-slate-400 mb-2">Petrol allowance & advance</p>
+            <div className="space-y-2">
+              {entries.map((e, i) => (
+                <div key={i} className={`flex items-center gap-3 rounded-2xl px-4 py-3 ${e.kind === 'PETROL' ? 'bg-sky-50' : 'bg-rose-50'}`}>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-bold ${e.kind === 'PETROL' ? 'text-sky-800' : 'text-rose-800'}`}>{e.kind === 'PETROL' ? 'Petrol allowance' : 'Salary advance'}</p>
+                    <p className="text-xs text-slate-500 truncate">{fmtDate(e.date, { day: 'numeric', month: 'short', year: 'numeric' })}{e.note ? ` · ${e.note}` : ''}</p>
+                  </div>
+                  <p className={`text-base font-extrabold tabular-nums ${e.kind === 'PETROL' ? 'text-sky-700' : 'text-rose-600'}`}>{e.kind === 'PETROL' ? '+' : '−'} {fmtMoney(e.amount)}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <p className="text-xs text-slate-400 mt-4">Net salary = Earned − Collected{m.petrol !== undefined ? ' + Petrol − Advance' : ''}. Questions? Call the office.</p>
+      </div>
+    </Sheet>
   )
 }
 
@@ -500,6 +553,7 @@ export default function TechApp() {
   const [tab, setTab] = useState('PENDING')
   const [openId, setOpenId] = useState(null)
   const [showAccount, setShowAccount] = useState(false)
+  const [salaryOpen, setSalaryOpen] = useState(null)   // 'prev' | 'cur' → salary details sheet
   const [search, setSearch] = useState('')
   const [newIds, setNewIds] = useState(() => new Set())
   const knownIds = useRef(null)
@@ -617,7 +671,7 @@ export default function TechApp() {
         </div>
         {!salaryMissing && (
           <div className="relative grid grid-cols-2 gap-2 px-4 pb-3.5">
-            {[['prev', 'Previous month'], ['cur', 'Current month']].map(([k, label]) => <SalaryCard key={k} label={label} m={salary?.[k]} current={k === 'cur'} />)}
+            {[['prev', 'Previous month'], ['cur', 'Current month']].map(([k, label]) => <SalaryCard key={k} label={label} m={salary?.[k]} current={k === 'cur'} onOpen={() => setSalaryOpen(k)} />)}
           </div>
         )}
         <div className="relative flex bg-white text-slate-500 rounded-t-3xl">
@@ -674,6 +728,7 @@ export default function TechApp() {
         ]} closeLabel="View my jobs" />
       {open && <JobDetail job={open} onClose={() => setOpenId(null)} refresh={refresh} />}
       {showAccount && <AccountSheet onClose={() => setShowAccount(false)} />}
+      {salaryOpen && salary?.[salaryOpen] && <SalarySheet label={salaryOpen === 'prev' ? 'Previous month' : 'Current month'} m={salary[salaryOpen]} onClose={() => setSalaryOpen(null)} />}
       {iosHelp && <IOSInstallSheet appName="HT Jobs" onClose={() => setIosHelp(false)} />}
     </div>
   )

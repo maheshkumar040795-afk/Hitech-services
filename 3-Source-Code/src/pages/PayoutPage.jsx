@@ -2,6 +2,7 @@ import { Fragment, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { Download, ChevronDown, ChevronRight, AlertTriangle, Wallet, Search, CheckCircle2, Undo2 } from 'lucide-react'
+import { FINANCE } from '../components/TechFinanceModal'
 import { supabase, errMsg, fetchAll } from '../lib/supabase'
 import { todayIST, addDays, fmtDate, fmtMoney, fmtDayIST, payLabel } from '../lib/format'
 import { downloadXlsx } from '../lib/excel'
@@ -47,9 +48,14 @@ export default function PayoutPage() {
   const paidBy = useMemo(() => new Map((paidRows || []).map((p) => [p.technician_id, p])), [paidRows])
   const [saving, setSaving] = useState(null)
   const markPaid = async (r) => {
-    if (!confirm(`Mark ${monthName(month)} salary of ${r.info.name} as paid?\n\nEarned ${fmtMoney(r.earned)} − collected ${fmtMoney(r.collected)} = ${fmtMoney(r.net)}`)) return
+    if (!confirm(`Mark ${monthName(month)} salary of ${r.info.name} as paid?\n\nEarned ${fmtMoney(r.earned)} − collected ${fmtMoney(r.collected)}${r.petrol ? ` + petrol ${fmtMoney(r.petrol)}` : ''}${r.advance ? ` − advance ${fmtMoney(r.advance)}` : ''} = ${fmtMoney(r.net)}`)) return
     setSaving(r.id)
-    const { error } = await supabase.from('salary_payments').upsert({ technician_id: r.id, month, earned: r.earned, collected: r.collected, amount: r.net, paid_at: new Date().toISOString(), paid_by: user?.id || null }, { onConflict: 'technician_id,month' })
+    const row = { technician_id: r.id, month, earned: r.earned, collected: r.collected, petrol: r.petrol, advance: r.advance, amount: r.net, paid_at: new Date().toISOString(), paid_by: user?.id || null }
+    let { error } = await supabase.from('salary_payments').upsert(row, { onConflict: 'technician_id,month' })
+    if (error && /petrol|advance/.test(error.message || '')) {   // older database
+      const { petrol, advance, ...rest } = row
+      ;({ error } = await supabase.from('salary_payments').upsert(rest, { onConflict: 'technician_id,month' }))
+    }
     setSaving(null)
     if (error) return toast(errMsg(error), 'error')
     toast(`${r.info.name}: ${monthName(month)} salary marked as paid`, 'success'); qc.invalidateQueries({ queryKey: ['salary-paid'] })
@@ -80,14 +86,18 @@ export default function PayoutPage() {
           .eq('status', 'COMPLETED').eq('is_deleted', false).not('technician_id', 'is', null)
           .gte('closed_at', fromIso).lt('closed_at', toIso).order('closed_at'))
       const old = (e) => e?.code === '42703'   // older database without the newer columns
-      const [jobs, ratesRes] = await Promise.all([
+      // Petrol allowance / salary advance in this period (by entry date); older database → none
+      const financeQ = supabase.from('tech_finance').select('*').gte('entry_date', from).lte('entry_date', to).order('entry_date')
+        .then(({ data, error }) => (error ? [] : data))
+      const [jobs, ratesRes, finance] = await Promise.all([
         load(cols + ', installed_item, job_type')
           .catch((e) => { if (old(e)) return load(cols + ', installed_item'); throw e })
           .catch((e) => { if (old(e)) return load(cols); throw e }),
         supabase.from('service_rates').select('*'),
+        financeQ,
       ])
       if (ratesRes.error) throw ratesRes.error
-      return { jobs, rates: ratesRes.data }
+      return { jobs, rates: ratesRes.data, finance }
     },
   })
 
@@ -109,15 +119,22 @@ export default function PayoutPage() {
       const t = byTech.get(o.technician_id) || { id: o.technician_id, jobs: [] }
       t.jobs.push(job); byTech.set(o.technician_id, t)
     }
+    for (const e of data.finance || []) {
+      const t = byTech.get(e.technician_id) || { id: e.technician_id, jobs: [] }
+      ;(t.finance ||= []).push(e); byTech.set(e.technician_id, t)
+    }
     return [...byTech.values()].map((t) => {
       const info = techs.find((x) => x.id === t.id) || { name: 'Unknown technician' }
       const earned = t.jobs.reduce((s, j) => s + (j.rate || 0), 0)
       const collected = t.jobs.reduce((s, j) => s + j.collected, 0)
+      const finance = t.finance || []
+      const petrol = finance.filter((e) => e.kind === 'PETROL').reduce((s, e) => s + Number(e.amount), 0)
+      const advance = finance.filter((e) => e.kind === 'ADVANCE').reduce((s, e) => s + Number(e.amount), 0)
       const svc = new Map()
       t.jobs.forEach((j) => { const k = (j.type === 'REPAIR' ? 'Repair: ' : '') + (j.item || '—'); svc.set(k, (svc.get(k) || 0) + 1) })
       const inst = t.jobs.filter((j) => j.type !== 'REPAIR'), rep = t.jobs.filter((j) => j.type === 'REPAIR')
       return {
-        ...t, info, earned, collected, net: earned - collected,
+        ...t, info, earned, collected, finance, petrol, advance, net: earned - collected + petrol - advance,
         installs: inst.length, installEarned: inst.reduce((s, j) => s + (j.rate || 0), 0),
         repairs: rep.length, repairEarned: rep.reduce((s, j) => s + (j.rate || 0), 0),
         amazon: t.jobs.filter((j) => j.amazon).length,
@@ -132,8 +149,9 @@ export default function PayoutPage() {
     (!q || [r.info.name, r.info.tech_code, r.info.city].some((v) => key(v).includes(key(q)))))
   const tot = shown.reduce((s, r) => ({ jobs: s.jobs + r.jobs.length, earned: s.earned + r.earned, collected: s.collected + r.collected, amazon: s.amazon + r.amazon,
     collectedJobs: s.collectedJobs + r.collectedJobs, net: s.net + r.net, missing: s.missing + r.missing,
-    installs: s.installs + r.installs, installEarned: s.installEarned + r.installEarned, repairs: s.repairs + r.repairs, repairEarned: s.repairEarned + r.repairEarned }),
-    { jobs: 0, earned: 0, collected: 0, amazon: 0, collectedJobs: 0, net: 0, missing: 0, installs: 0, installEarned: 0, repairs: 0, repairEarned: 0 })
+    installs: s.installs + r.installs, installEarned: s.installEarned + r.installEarned, repairs: s.repairs + r.repairs, repairEarned: s.repairEarned + r.repairEarned,
+    petrol: s.petrol + r.petrol, advance: s.advance + r.advance }),
+    { jobs: 0, earned: 0, collected: 0, amazon: 0, collectedJobs: 0, net: 0, missing: 0, installs: 0, installEarned: 0, repairs: 0, repairEarned: 0, petrol: 0, advance: 0 })
 
   const pick = ([k, , fn]) => { setQuick(k); setRange(fn()) }
   const toggle = (id) => setOpen((p) => { const s = new Set(p); s.has(id) ? s.delete(id) : s.add(id); return s })
@@ -145,12 +163,12 @@ export default function PayoutPage() {
     const summary = shown.map((r, i) => ({
       'S.No': i + 1, Period: period, 'Technician ID': r.info.tech_code || '', Technician: r.info.name, Mobile: r.info.mobile || '',
       'Jobs completed': r.jobs.length, Installations: r.installs, 'Installation earned ₹': r.installEarned, Repairs: r.repairs, 'Repair earned ₹': r.repairEarned, 'Jobs: collected from customer': r.collectedJobs, 'Jobs: paid on Amazon': r.amazon, 'Jobs without rate': r.missing,
-      'Earned (Rate Config) ₹': r.earned, 'Collected from customer ₹': r.collected, 'Net pay ₹': r.net, Result: result(r.net), ...(showSalary ? { 'Salary status': salaryInfo(r).label } : {}), Services: r.services,
+      'Earned (Rate Config) ₹': r.earned, 'Collected from customer ₹': r.collected, 'Petrol allowance ₹': r.petrol, 'Salary advance ₹': r.advance, 'Net pay ₹': r.net, Result: result(r.net), ...(showSalary ? { 'Salary status': salaryInfo(r).label } : {}), Services: r.services,
     }))
     if (shown.length > 1) summary.push({
       'S.No': '', Period: period, 'Technician ID': '', Technician: 'TOTAL', Mobile: '',
       'Jobs completed': tot.jobs, Installations: tot.installs, 'Installation earned ₹': tot.installEarned, Repairs: tot.repairs, 'Repair earned ₹': tot.repairEarned, 'Jobs: collected from customer': tot.collectedJobs, 'Jobs: paid on Amazon': tot.amazon, 'Jobs without rate': tot.missing,
-      'Earned (Rate Config) ₹': tot.earned, 'Collected from customer ₹': tot.collected, 'Net pay ₹': tot.net, Result: result(tot.net), Services: '',
+      'Earned (Rate Config) ₹': tot.earned, 'Collected from customer ₹': tot.collected, 'Petrol allowance ₹': tot.petrol, 'Salary advance ₹': tot.advance, 'Net pay ₹': tot.net, Result: result(tot.net), Services: '',
     })
     const details = shown.flatMap((r) => [
       ...r.jobs.map((j, i) => ({
@@ -162,8 +180,12 @@ export default function PayoutPage() {
         'Service (order)': '', 'Installed Item': '', Region: '', Payment: result(r.net), 'Rate ₹': r.earned, 'Collected from customer ₹': r.collected, 'Net for this job ₹': r.net },
     ])
     downloadXlsx(`technician-payout-${label}.xlsx`, [
-      { name: 'Summary', rows: summary, widths: [6, 22, 14, 22, 13, 15, 13, 20, 10, 15, 27, 20, 17, 21, 25, 12, 22, 60] },
+      { name: 'Summary', rows: summary, widths: [6, 22, 14, 22, 13, 15, 13, 20, 10, 15, 27, 20, 17, 21, 25, 17, 15, 12, 22, 60] },
       { name: 'Job details', rows: details, widths: [14, 26, 9, 16, 14, 24, 22, 32, 32, 16, 24, 10, 25, 19] },
+      ...(shown.some((r) => r.finance.length) ? [{ name: 'Petrol & Advance', widths: [14, 24, 13, 20, 14, 40], rows: shown.flatMap((r) => r.finance.map((e) => ({
+        'Technician ID': r.info.tech_code || '', Technician: r.info.name, Date: fmtDate(e.entry_date), Type: FINANCE[e.kind]?.label || e.kind,
+        'Amount ₹': e.kind === 'ADVANCE' ? -Number(e.amount) : Number(e.amount), Note: e.note || '',
+      }))) }] : []),
     ])
   }
 
@@ -199,7 +221,7 @@ export default function PayoutPage() {
         {[['Installations', <>{tot.installs} <span className="text-sm font-bold text-slate-400">· {fmtMoney(tot.installEarned)}</span></>, 'text-slate-900'],
           ['Repairs', <>{tot.repairs} <span className="text-sm font-bold text-slate-400">· {fmtMoney(tot.repairEarned)}</span></>, 'text-orange-700'],
           ['Earned (rates)', fmtMoney(tot.earned), 'text-slate-900'],
-          ['Collected from customer', fmtMoney(tot.collected), 'text-amber-700'], ['Net pay', fmtMoney(tot.net), tot.net < 0 ? 'text-red-600' : 'text-emerald-700']].map(([l, v, c]) => (
+          ['Collected from customer', fmtMoney(tot.collected), 'text-amber-700'], ['Net pay', <>{fmtMoney(tot.net)}{(tot.petrol > 0 || tot.advance > 0) && <span className="block text-[10.5px] font-semibold text-slate-400 mt-0.5">incl. + {fmtMoney(tot.petrol)} petrol · − {fmtMoney(tot.advance)} advance</span>}</>, tot.net < 0 ? 'text-red-600' : 'text-emerald-700']].map(([l, v, c]) => (
           <div key={l} className="card p-4"><p className="text-[10.5px] font-bold text-slate-500 uppercase tracking-[.08em]">{l}</p><p className={`text-[22px] font-heading font-extrabold mt-1 tabular-nums ${c}`}>{v}</p></div>
         ))}
       </div>
@@ -225,10 +247,10 @@ export default function PayoutPage() {
       <div className="card p-0 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead><tr>{['', 'Technician', 'Installations', 'Repairs', 'Services', 'Earned', 'Collected from customer', 'Paid on Amazon', 'Net pay', ...(showSalary ? [`Salary · ${monthName(month)}`] : [])].map((h) => <th key={h} className="th whitespace-nowrap">{h}</th>)}</tr></thead>
+            <thead><tr>{['', 'Technician', 'Installations', 'Repairs', 'Services', 'Earned', 'Collected from customer', 'Paid on Amazon', 'Petrol', 'Advance', 'Net pay', ...(showSalary ? [`Salary · ${monthName(month)}`] : [])].map((h) => <th key={h} className="th whitespace-nowrap">{h}</th>)}</tr></thead>
             <tbody>
-              {isLoading ? <tr><td colSpan={showSalary ? 10 : 9} className="px-4 py-10 text-center text-sm text-slate-400">Loading…</td></tr>
-                : !shown.length ? <tr><td colSpan={showSalary ? 10 : 9} className="px-4 py-10 text-center text-sm text-slate-400">No completed jobs in this period</td></tr>
+              {isLoading ? <tr><td colSpan={showSalary ? 12 : 11} className="px-4 py-10 text-center text-sm text-slate-400">Loading…</td></tr>
+                : !shown.length ? <tr><td colSpan={showSalary ? 12 : 11} className="px-4 py-10 text-center text-sm text-slate-400">No completed jobs in this period</td></tr>
                 : shown.map((r) => (
                   <Fragment key={r.id}>
                     <tr className="table-row cursor-pointer" onClick={() => toggle(r.id)}>
@@ -240,6 +262,8 @@ export default function PayoutPage() {
                       <td className="td tabular-nums whitespace-nowrap">{fmtMoney(r.earned)}{r.missing > 0 && <span title="Jobs without a rate" className="ml-1 text-[10px] font-bold text-amber-600">+{r.missing}?</span>}</td>
                       <td className="td tabular-nums text-amber-700 whitespace-nowrap">{r.collected ? `− ${fmtMoney(r.collected)}` : '—'}{r.collectedJobs > 0 && <span className="ml-1 text-[10px] text-slate-400">{r.collectedJobs} job{r.collectedJobs > 1 ? 's' : ''}</span>}</td>
                       <td className="td tabular-nums text-violet-700 whitespace-nowrap">{r.amazon ? `${r.amazon} job${r.amazon > 1 ? 's' : ''}` : '—'}</td>
+                      <td className="td tabular-nums text-sky-700 whitespace-nowrap">{r.petrol ? `+ ${fmtMoney(r.petrol)}` : '—'}</td>
+                      <td className="td tabular-nums text-rose-700 whitespace-nowrap">{r.advance ? `− ${fmtMoney(r.advance)}` : '—'}</td>
                       <td className="td whitespace-nowrap">
                         <span className={`text-[15px] font-heading font-extrabold tabular-nums ${r.net < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{fmtMoney(Math.abs(r.net))}</span>
                         <span className="block text-[10px] text-slate-400">{r.net < 0 ? 'technician owes office' : r.net === 0 ? 'settled, nothing to pay' : 'pay technician'}</span>
@@ -257,7 +281,7 @@ export default function PayoutPage() {
                     {open.has(r.id) && (
                       <tr className="bg-slate-50/70">
                         <td />
-                        <td colSpan={showSalary ? 9 : 8} className="px-4 pb-4 pt-1">
+                        <td colSpan={showSalary ? 11 : 10} className="px-4 pb-4 pt-1">
                           <table className="w-full text-xs bg-white rounded-xl border border-slate-200 overflow-hidden">
                             <thead><tr className="bg-slate-50 text-slate-500">{['Completed', 'Type', 'Order ID', 'Customer', 'Installed / Repaired', 'Region', 'Payment', 'Rate', 'Collected', 'Net'].map((h) => <th key={h} className="px-3 py-2 text-left font-semibold">{h}</th>)}</tr></thead>
                             <tbody>{r.jobs.map((j) => (
@@ -275,8 +299,14 @@ export default function PayoutPage() {
                               </tr>))}
                             </tbody>
                           </table>
+                          {r.finance.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {r.finance.map((e) => { const m = FINANCE[e.kind]; return (
+                                <span key={e.id} title={e.note || ''} className={`text-[11px] font-semibold px-2 py-1 rounded-lg ring-1 ring-inset ${m.chip}`}>{m.short} {m.sign} {fmtMoney(e.amount)} · {fmtDate(e.entry_date)}{e.note ? ` · ${e.note}` : ''}</span>) })}
+                            </div>
+                          )}
                           <p className="text-xs text-slate-600 mt-2 flex items-center gap-1.5"><Wallet size={13} className="text-brand-600" />
-                            Earned {fmtMoney(r.earned)} − collected from customer {fmtMoney(r.collected)} = <b className={r.net < 0 ? 'text-red-600' : 'text-emerald-700'}>{r.net < 0 ? `technician owes ${fmtMoney(-r.net)}` : `net pay ${fmtMoney(r.net)}`}</b></p>
+                            Earned {fmtMoney(r.earned)} − collected from customer {fmtMoney(r.collected)}{r.petrol ? ` + petrol ${fmtMoney(r.petrol)}` : ''}{r.advance ? ` − advance ${fmtMoney(r.advance)}` : ''} = <b className={r.net < 0 ? 'text-red-600' : 'text-emerald-700'}>{r.net < 0 ? `technician owes ${fmtMoney(-r.net)}` : `net pay ${fmtMoney(r.net)}`}</b></p>
                         </td>
                       </tr>
                     )}
@@ -285,7 +315,7 @@ export default function PayoutPage() {
               {shown.length > 1 && (
                 <tr className="bg-brand-50/50 font-semibold">
                   <td /><td className="td">Total</td><td className="td tabular-nums">{tot.installs}</td><td className="td tabular-nums text-orange-700">{tot.repairs || '—'}</td><td />
-                  <td className="td tabular-nums">{fmtMoney(tot.earned)}</td><td className="td tabular-nums">− {fmtMoney(tot.collected)}</td><td className="td tabular-nums">{tot.amazon ? `${tot.amazon} job${tot.amazon > 1 ? 's' : ''}` : '—'}</td>
+                  <td className="td tabular-nums">{fmtMoney(tot.earned)}</td><td className="td tabular-nums">− {fmtMoney(tot.collected)}</td><td className="td tabular-nums">{tot.amazon ? `${tot.amazon} job${tot.amazon > 1 ? 's' : ''}` : '—'}</td><td className="td tabular-nums text-sky-700">{tot.petrol ? `+ ${fmtMoney(tot.petrol)}` : '—'}</td><td className="td tabular-nums text-rose-700">{tot.advance ? `− ${fmtMoney(tot.advance)}` : '—'}</td>
                   <td className="td tabular-nums">{fmtMoney(tot.net)}</td>
                   {showSalary && <td className="td text-xs text-slate-500">{shown.filter((r) => paidBy.has(r.id) && salaryInfo(r).balance === 0).length} / {shown.length} paid</td>}
                 </tr>

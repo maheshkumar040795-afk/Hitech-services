@@ -28,7 +28,8 @@
         var TECH = !!window.HT_TECH_ENTRY            // set only in tech/index.html
         var B = TECH ? '../' : './'
         // Old links (…/#/tech, …/#/tech/login) → move to the technician folder so Add to Home Screen saves …/tech/
-        if (!TECH && location.hash.indexOf('#/tech') === 0) { location.replace(B + 'tech/' + location.hash); return }
+        var TECH_LINK = location.hash === '#/tech' || location.hash.indexOf('#/tech/') === 0   // not #/technicians
+        if (!TECH && TECH_LINK) { location.replace(B + 'tech/' + location.hash); return }
         // Technician folder always shows the technician app
         if (TECH && location.hash.indexOf('#/tech') !== 0) history.replaceState(null, '', '#/tech')
         document.getElementById('app-manifest').href = B + (TECH ? 'manifest-tech.json' : 'manifest.json')

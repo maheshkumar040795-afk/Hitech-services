@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Search, MapPin, Phone, X, BadgeCheck, Upload, Download, Smartphone, KeyRound, Ban, Pencil, Copy, MessageCircle, Power, ClipboardList } from 'lucide-react'
+import { Plus, Search, MapPin, Phone, X, BadgeCheck, Upload, Download, Smartphone, KeyRound, Ban, Pencil, Copy, MessageCircle, Power, ClipboardList, IndianRupee } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { supabase, rpc, errMsg, adminAction } from '../lib/supabase'
 import { fmtMoney, todayIST, waUrl, techLabel } from '../lib/format'
@@ -10,6 +10,7 @@ import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
 import { useTechnicians, useTechStats, usePinResets, resolvePinResets } from '../hooks/useData'
 import Modal, { Field } from '../components/Modal'
+import TechFinanceModal from '../components/TechFinanceModal'
 import { useOnlineTechs, techStatus, STATUS_META, ago } from '../hooks/usePresence'
 
 const EMPTY = { tech_code: '', name: '', mobile: '', city: '', district: '', pincode: '', aadhar: '' }
@@ -210,6 +211,7 @@ export default function TechniciansPage() {
   const [view, setView] = useState('active')   // active | working | noapp | inactive
   const [shown, setShown] = useState(24)
   const [profileId, setProfileId] = useState(null)
+  const [financeTech, setFinanceTech] = useState(null)   // ₹ Finance popup (admin)
   const [form, setForm] = useState(null) // null | 'new' | tech
   const [loginFor, setLoginFor] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -267,6 +269,7 @@ export default function TechniciansPage() {
 
   return (
     <div className="space-y-4">
+      {financeTech && <TechFinanceModal tech={financeTech} onClose={() => setFinanceTech(null)} />}
       {profileTech && <TechProfile tech={profileTech} stat={stats[profileTech.id]} onClose={() => setProfileId(null)}
         onEdit={() => setForm(profileTech)} onLogin={() => setLoginFor(profileTech)} refresh={refresh} />}
       {form && <TechForm tech={form === 'new' ? null : form} onClose={() => setForm(null)} onSaved={refresh} />}
@@ -350,10 +353,14 @@ export default function TechniciansPage() {
                       <p className="text-xs text-slate-400 flex items-center gap-1">{t.mobile ? <><Phone size={10} />{t.mobile}</> : <span className="text-amber-600">No mobile</span>}</p>
                     </div>
                   </div>
+                  <div className="flex items-start gap-1.5 flex-shrink-0">
+                  {isAdmin && <button onClick={(e) => { e.stopPropagation(); setFinanceTech(t) }} title="Finance: petrol allowance / salary advance"
+                    className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/20 hover:bg-emerald-100 flex items-center justify-center"><IndianRupee size={14} /></button>}
                   {(() => { const k = st(t), m = STATUS_META[k]; return (
                     <span title={`Last login ${ago(t.last_login_at)} · last seen ${ago(t.last_seen_at)}`} className={`text-[10px] px-2 py-0.5 rounded-full font-semibold flex flex-col items-end flex-shrink-0 ring-1 ring-inset ${m.chip}`}>
                       <span className="flex items-center gap-1"><span className={`w-1.5 h-1.5 rounded-full ${m.dot} ${k === 'online' ? 'animate-pulse-dot' : ''}`} />{m.label}</span>
                     </span>) })()}
+                  </div>
                 </div>
                 {t.city && <p className="text-xs text-slate-400 flex items-center gap-1 mb-1"><MapPin size={10} />{[t.city, t.district].filter(Boolean).join(', ')}</p>}
                 {t.user_id && <p className="text-[11px] text-slate-400 mb-3">{st(t) === 'online' ? 'Using HT Jobs now' : st(t) === 'loggedin' ? `Logged in · last seen ${ago(t.last_seen_at)}` : t.last_logout_at ? `Logged out ${ago(t.last_logout_at)}` : 'Not logged in yet'}</p>}

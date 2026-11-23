@@ -302,3 +302,13 @@ Within each group, the technician with fewer open jobs comes first. Common spell
 - **HT Jobs:** repair jobs show an orange **REPAIR** badge. *Mark Completed* asks **"What did you repair?"** with the Repair list. The salary cards show **Install × n ₹…** and **Repair × n ₹…** for previous and current month, then Collected and Net salary.
 - **Technician Payout:** new **Installations** and **Repairs** columns (count and amount) and summary cards; job details have a *Type* column; Export has Installations / Installation earned / Repairs / Repair earned, and *Type* per job. Mark as paid covers both.
 - Reports export and the order drawer show the Job Type. The Dashboard counts installations and repairs together.
+
+## Update — Nov 2026 (10): Petrol allowance + Salary advance
+
+**Run once:** Supabase → SQL Editor → paste `2-Supabase-Setup/update-2026-11-tech-finance.sql` → **Run**.
+
+- **Technicians → green ₹ button** on each technician card (admins only) opens *Finance*: add **Petrol allowance (+)** or **Salary advance (−)** with amount, date and note; see and delete entries month by month. Every add / delete is in the Audit Log.
+- **Net salary = Earned − Collected from customer + Petrol allowance − Salary advance**, counted in the month of the entry date.
+- **Technician Payout:** new *Petrol* and *Advance* columns, Net pay includes them, the expanded row lists each entry, *Mark as paid* saves the amount including them, Export has the two columns and a *Petrol & Advance* sheet. A technician with only an advance / allowance in the period (no jobs) is listed too.
+- **HT Jobs:** month cards show *Petrol +* and *Advance −*; tap a card for the full breakdown (installations, repairs, collected, petrol, advance, net salary, paid / balance) and every petrol / advance entry with date and note.
+- Fixed: refreshing the office **Technicians** page (…/#/technicians) no longer jumps to the HT Jobs app.
