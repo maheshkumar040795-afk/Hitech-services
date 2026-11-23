@@ -5,6 +5,7 @@ import { supabase, rpc, errMsg } from '../lib/supabase'
 import { todayIST, fmtMoney } from '../lib/format'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
+import { usePasswordConfirm } from '../components/PasswordConfirm'
 
 const TABS = [
   ['rate_chennai', 'Within Chennai', 'Pin code 600xxx (or no pin code)'],
@@ -22,6 +23,7 @@ export default function RatesPage() {
   const qc = useQueryClient()
   const { toast } = useToast()
   const { user } = useAuth()
+  const askPassword = usePasswordConfirm()
   const [kind, setKind] = useState('INSTALLATION')
   const [tab, setTab] = useState('rate_chennai')
   const [q, setQ] = useState('')
@@ -89,7 +91,7 @@ export default function RatesPage() {
     setNewSvc({ service: '', rate: '' }); refresh()
   }
   const remove = async (row) => {
-    if (!confirm(`Delete ${row.service}? Past payouts keep their saved rate.`)) return
+    if (!(await askPassword({ title: `Delete ${row.service}?`, message: `${row.service} will be removed from ${K[1]}. Past payouts keep their saved rate.` }))) return
     const { error } = await supabase.from('service_rates').delete().eq('id', row.id)
     if (error) return toast(errMsg(error), 'error')
     refresh()

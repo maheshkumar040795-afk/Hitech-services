@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { PasswordConfirmProvider } from './components/PasswordConfirm'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { ToastProvider } from './context/ToastContext'
 import { CONFIG_MISSING } from './lib/supabase'
@@ -127,10 +128,12 @@ export default function App() {
   return (
     <AuthProvider>
       <ToastProvider>
-        <PWABanners />
-        <Suspense fallback={<Splash />}>
-          {TECH_ENTRY ? <TechOnlyRoutes /> : <AppRoutes />}
-        </Suspense>
+        <PasswordConfirmProvider>
+          <PWABanners />
+          <Suspense fallback={<Splash />}>
+            {TECH_ENTRY ? <TechOnlyRoutes /> : <AppRoutes />}
+          </Suspense>
+        </PasswordConfirmProvider>
       </ToastProvider>
     </AuthProvider>
   )

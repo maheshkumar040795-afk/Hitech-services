@@ -6,6 +6,7 @@ import { fmtDate, fmtMoney, todayIST } from '../lib/format'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
 import Modal, { Field } from './Modal'
+import { usePasswordConfirm } from './PasswordConfirm'
 
 export const FINANCE = {
   PETROL:  { label: 'Petrol allowance', short: 'Petrol', sign: '+', icon: Fuel, chip: 'bg-sky-50 text-sky-700 ring-sky-600/20', text: 'text-sky-700' },
@@ -22,6 +23,7 @@ export default function TechFinanceModal({ tech, onClose }) {
   const { toast } = useToast()
   const { user } = useAuth()
   const qc = useQueryClient()
+  const askPassword = usePasswordConfirm()
   const [month, setMonth] = useState(monthStart(todayIST()))
   const [f, setF] = useState({ kind: 'PETROL', amount: '', entry_date: todayIST(), note: '' })
   const [busy, setBusy] = useState(false)
@@ -55,7 +57,7 @@ export default function TechFinanceModal({ tech, onClose }) {
     setF((p) => ({ ...p, amount: '', note: '' })); refresh()
   }
   const remove = async (r) => {
-    if (!confirm(`Delete ${FINANCE[r.kind].label} ${fmtMoney(r.amount)} of ${fmtDate(r.entry_date)}?`)) return
+    if (!(await askPassword({ title: `Delete ${FINANCE[r.kind].label.toLowerCase()}?`, message: `${FINANCE[r.kind].label} ${fmtMoney(r.amount)} of ${fmtDate(r.entry_date)} for ${tech.name} will be deleted and taken out of the net salary.` }))) return
     const { error } = await supabase.from('tech_finance').delete().eq('id', r.id)
     if (error) return toast(errMsg(error), 'error')
     toast('Deleted', 'success'); refresh()

@@ -312,3 +312,11 @@ Within each group, the technician with fewer open jobs comes first. Common spell
 - **Technician Payout:** new *Petrol* and *Advance* columns, Net pay includes them, the expanded row lists each entry, *Mark as paid* saves the amount including them, Export has the two columns and a *Petrol & Advance* sheet. A technician with only an advance / allowance in the period (no jobs) is listed too.
 - **HT Jobs:** month cards show *Petrol +* and *Advance −*; tap a card for the full breakdown (installations, repairs, collected, petrol, advance, net salary, paid / balance) and every petrol / advance entry with date and note.
 - Fixed: refreshing the office **Technicians** page (…/#/technicians) no longer jumps to the HT Jobs app.
+
+## Update — Nov 2026 (11): password before delete, simpler bulk bar, "Installation Orders"
+
+No SQL to run.
+
+- Left menu / page title **Orders → Installation Orders**.
+- Select rows on Installation Orders or Repairs → the bar now has only **Assign** and **Delete** (bulk → Pending / Completed / Rejected / Cancelled / Reschedule removed; each row's own Status dropdown is unchanged).
+- **Every delete asks for the admin's login password** first: Installation Orders and Repairs (selected rows), Rate Config (delete a rate), Technicians → ₹ Finance (delete an entry), Technician Payout (*Undo* paid). A wrong password deletes nothing. The check uses a separate one-time login, so the admin stays logged in.

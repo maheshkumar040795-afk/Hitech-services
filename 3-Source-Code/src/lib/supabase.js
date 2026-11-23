@@ -6,6 +6,8 @@ const isSet = (v) => v && !String(v).includes('YOUR-')
 const url = isSet(cfg.SUPABASE_URL) ? cfg.SUPABASE_URL : import.meta.env.VITE_SUPABASE_URL
 const key = isSet(cfg.SUPABASE_ANON_KEY) ? cfg.SUPABASE_ANON_KEY : import.meta.env.VITE_SUPABASE_ANON_KEY
 export const CONFIG_MISSING = !isSet(url) || !isSet(key)
+export const SUPABASE_URL = url
+export const SUPABASE_KEY = key
 
 export const supabase = createClient(url || 'https://missing.supabase.co', key || 'missing', {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },

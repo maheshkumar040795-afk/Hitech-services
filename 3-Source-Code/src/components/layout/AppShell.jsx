@@ -16,7 +16,7 @@ import Logo from '../Logo'
 
 const NAV_ITEMS = [
   { to: '/',            label: 'Dashboard',   icon: LayoutDashboard, exact: true },
-  { to: '/orders',      label: 'Orders',      icon: ClipboardList },
+  { to: '/orders',      label: 'Installation Orders', icon: ClipboardList },
   { to: '/repairs',     label: 'Repairs',     icon: Hammer },
   { to: '/technicians', label: 'Technicians', icon: Wrench },
   { to: '/billing',     label: 'Billing',     icon: Receipt },

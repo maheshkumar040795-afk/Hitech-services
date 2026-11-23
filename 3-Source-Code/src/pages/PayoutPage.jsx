@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { Download, ChevronDown, ChevronRight, AlertTriangle, Wallet, Search, CheckCircle2, Undo2 } from 'lucide-react'
 import { FINANCE } from '../components/TechFinanceModal'
+import { usePasswordConfirm } from '../components/PasswordConfirm'
 import { supabase, errMsg, fetchAll } from '../lib/supabase'
 import { todayIST, addDays, fmtDate, fmtMoney, fmtDayIST, payLabel } from '../lib/format'
 import { downloadXlsx } from '../lib/excel'
@@ -38,6 +39,7 @@ export default function PayoutPage() {
   const [open, setOpen] = useState(() => new Set())
   const { isAdmin, user } = useAuth()
   const { toast } = useToast()
+  const askPassword = usePasswordConfirm()
   const qc = useQueryClient()
   // A single calendar month is picked (1st → any day of the same month) → salary can be marked as paid
   const month = from.endsWith('-01') && from.slice(0, 7) === to.slice(0, 7) ? from : null
@@ -61,7 +63,7 @@ export default function PayoutPage() {
     toast(`${r.info.name}: ${monthName(month)} salary marked as paid`, 'success'); qc.invalidateQueries({ queryKey: ['salary-paid'] })
   }
   const undoPaid = async (r) => {
-    if (!confirm(`Undo "paid" for ${r.info.name} (${monthName(month)})?`)) return
+    if (!(await askPassword({ title: 'Undo salary paid?', action: 'Undo paid', message: `${r.info.name}: the "paid" record for ${monthName(month)} will be deleted.` }))) return
     setSaving(r.id)
     const { error } = await supabase.from('salary_payments').delete().eq('technician_id', r.id).eq('month', month)
     setSaving(null)

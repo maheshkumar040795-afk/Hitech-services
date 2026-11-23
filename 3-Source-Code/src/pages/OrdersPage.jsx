@@ -11,6 +11,7 @@ import { useTechnicians } from '../hooks/useData'
 import OrderDrawer from '../components/OrderDrawer'
 import TechPicker from '../components/TechPicker'
 import Modal, { Field } from '../components/Modal'
+import { usePasswordConfirm } from '../components/PasswordConfirm'
 
 const LIMIT = 25
 // '*' so new columns (location_url, rescheduled_date, payment_mode) come through without breaking older databases
@@ -353,6 +354,7 @@ function CompleteModal({ order, techs, onClose, onSaved, jobType = 'INSTALLATION
 
 export default function OrdersPage({ jobType = 'INSTALLATION' }) {
   const J = JOB_TYPES[jobType]
+  const askPassword = usePasswordConfirm()
   const qc = useQueryClient()
   const { toast } = useToast()
   const { isAdmin } = useAuth()
@@ -502,24 +504,15 @@ export default function OrdersPage({ jobType = 'INSTALLATION' }) {
           <TechPicker techs={techs} value={bulkTech} onChange={setBulkTech} placeholder="Assign to…" className="w-auto min-w-[200px] py-1.5 text-xs" pinCode={bulkPin} location={bulkLoc}
             extra={[{ value: 'none', label: '— Unassign —' }]} />
           <button disabled={!bulkTech || busy} className="btn-primary text-xs py-1.5"
-            onClick={() => update([...selected], { technician_id: bulkTech === 'none' ? null : bulkTech }, `${selected.size} orders ${bulkTech === 'none' ? 'unassigned' : 'assigned'}`).then(() => { setSelected(new Set()); setBulkTech('') })}>Assign</button>
-          <span className="w-px h-6 bg-brand-200 mx-1" />
-          {['PENDING', 'COMPLETED', 'REJECTED'].map((s) => (
-            <button key={s} disabled={busy} onClick={() => {
-              const one = selected.size === 1 && orders.find((o) => selected.has(o.id))
-              if (s === 'COMPLETED' && one) return setCompleting(one)   // one order → ask installed item + payment
-              update([...selected], { status: s }, s === 'COMPLETED' ? `${selected.size} orders → Completed. Open each one (pencil) to set the installed item and amount collected.` : `${selected.size} orders → ${STATUS[s].label}`).then(() => setSelected(new Set()))
-            }}
-              className={`text-xs font-semibold px-3 py-1.5 rounded-lg border ${STATUS[s].bg} ${STATUS[s].text} ${STATUS[s].border}`}>→ {STATUS[s].label}</button>
-          ))}
-          <button disabled={busy} onClick={() => cancelOrders(orders.filter((o) => selected.has(o.id))).then(() => setSelected(new Set()))}
-            className={`text-xs font-semibold px-3 py-1.5 rounded-lg border ${STATUS.CANCELLED.bg} ${STATUS.CANCELLED.text} ${STATUS.CANCELLED.border}`}>→ Cancelled</button>
-          <button disabled={busy} onClick={() => setResched(orders.filter((o) => selected.has(o.id)))}
-            className={`text-xs font-semibold px-3 py-1.5 rounded-lg border ${STATUS.RESCHEDULED.bg} ${STATUS.RESCHEDULED.text} ${STATUS.RESCHEDULED.border}`}>→ Reschedule…</button>
-          {isAdmin && <button disabled={busy} className="btn-danger text-xs py-1.5" onClick={() => {
-            if (confirm(`Delete ${selected.size} orders? They will be hidden everywhere (can be restored from the database).`))
-              update([...selected], { is_deleted: true }, 'Orders deleted').then(() => setSelected(new Set()))
-          }}><Trash2 size={12} /> Delete</button>}
+            onClick={() => update([...selected], { technician_id: bulkTech === 'none' ? null : bulkTech }, `${selected.size} ${J.many} ${bulkTech === 'none' ? 'unassigned' : 'assigned'}`).then(() => { setSelected(new Set()); setBulkTech('') })}>Assign</button>
+          {isAdmin && <>
+            <span className="w-px h-6 bg-brand-200 mx-1" />
+            <button disabled={busy} className="btn-danger text-xs py-1.5" onClick={async () => {
+              const n = selected.size
+              if (!(await askPassword({ title: `Delete ${n} ${n === 1 ? J.one : J.many}?`, message: `${n} ${n === 1 ? J.one : J.many} will be removed from ${J.title}, HT Jobs, Reports and Payout.\nEnter your password to confirm.` }))) return
+              update([...selected], { is_deleted: true }, `${n} ${n === 1 ? J.one : J.many} deleted`).then(() => setSelected(new Set()))
+            }}><Trash2 size={12} /> Delete</button>
+          </>}
           <button onClick={() => setSelected(new Set())} className="btn-secondary text-xs py-1.5 ml-auto"><X size={13} /></button>
         </div>
       )}

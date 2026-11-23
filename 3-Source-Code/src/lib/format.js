@@ -54,7 +54,7 @@ export const isRepair = (o) => o?.job_type === 'REPAIR'
 export const ownLabel = (o) => (isRepair(o) ? 'Own Repair' : OWN_INSTALL)
 /** Orders screen = installations, Repairs screen = repairs (same table, column job_type) */
 export const JOB_TYPES = {
-  INSTALLATION: { key: 'INSTALLATION', title: 'Orders', one: 'order', many: 'orders', One: 'Order', file: 'hitech-orders', own: OWN_INSTALL, did: 'installed', item: 'Installed item' },
+  INSTALLATION: { key: 'INSTALLATION', title: 'Installation Orders', one: 'order', many: 'orders', One: 'Order', file: 'hitech-orders', own: OWN_INSTALL, did: 'installed', item: 'Installed item' },
   REPAIR:       { key: 'REPAIR', title: 'Repairs', one: 'repair', many: 'repairs', One: 'Repair', file: 'hitech-repairs', own: 'Own Repair', did: 'repaired', item: 'Repair done' },
 }
 /** Statuses that still need a visit */
