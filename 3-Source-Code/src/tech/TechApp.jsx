@@ -16,6 +16,7 @@ import { usePushAlerts } from './usePushAlerts'
 import { useTechPresence } from '../hooks/usePresence'
 import IOSInstallSheet from '../components/ui/IOSInstallSheet'
 import PhotoPicker, { photoItems, photoUrls } from './PhotoPicker'
+import DoneCalendar from './DoneCalendar'
 import { PHOTOS_ENABLED, PHOTOS_REQUIRED, photoThumb } from '../lib/photos'
 
 const REASONS = [
@@ -629,7 +630,7 @@ export default function TechApp() {
     queryKey: ['my-salary', technician?.id], enabled: !!technician, staleTime: 30_000, retry: false,
     queryFn: async () => { const { data, error } = await supabase.rpc('tech_salary_summary'); if (error) throw error; return data },
   })
-  useEffect(() => { qc.invalidateQueries({ queryKey: ['my-salary'] }) }, [jobs, qc])   // job completed → totals update
+  useEffect(() => { qc.invalidateQueries({ queryKey: ['my-salary'] }); qc.invalidateQueries({ queryKey: ['done-month'] }) }, [jobs, qc])   // job completed → totals update
 
   const list = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -652,6 +653,22 @@ export default function TechApp() {
   }
 
   const TABS = [['PENDING', 'Pending', pending.length], ['COMPLETED', 'Done', jobs.filter((j) => j.status === 'COMPLETED').length], ['REJECTED', 'Not done', jobs.filter((j) => j.status === 'REJECTED').length]]
+
+  const oldList = (<>
+        {isLoading ? Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-36 rounded-3xl bg-white animate-pulse" />)
+          : list.length === 0 ? (
+            <div className="text-center py-16 px-6">
+              <div className="w-16 h-16 mx-auto rounded-full bg-white flex items-center justify-center mb-3">{tab === 'PENDING' ? <CheckCircle2 size={30} className="text-emerald-500" /> : <Clock size={28} className="text-slate-300" />}</div>
+              <p className="font-semibold text-slate-700">{search ? 'No matching jobs' : tab === 'PENDING' ? 'No pending jobs' : `Nothing here in the last ${historyDays} days`}</p>
+              {tab === 'PENDING' && !search && <p className="text-sm text-slate-500 mt-1">New jobs appear here automatically when the office assigns them.</p>}
+            </div>
+          ) : list.map((j) => j.status === 'COMPLETED' ? <DoneCard key={j.id} job={j} /> : <JobCard key={j.id} job={j} isNew={newIds.has(j.id)} onOpen={() => openJob(j.id)} />)}
+        {tab !== 'PENDING' && !isLoading && historyDays === HISTORY_SHORT && (
+          <button onClick={() => setHistoryDays(HISTORY_LONG)} className="w-full py-3 rounded-2xl border-2 border-dashed border-slate-300 text-sm font-semibold text-slate-600 active:bg-white">
+            Showing last {HISTORY_SHORT} days · Show last {HISTORY_LONG} days
+          </button>
+        )}
+  </>)
 
   return (
     <div className="min-h-[100dvh] bg-[#f1f3fa]">
@@ -699,26 +716,14 @@ export default function TechApp() {
             </div>
           </div>
         )}
-        {jobs.length > 6 && (
+        {(jobs.length > 6 || tab === 'COMPLETED') && (
           <div className="relative">
             <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input className="w-full rounded-2xl bg-white border border-slate-200 pl-11 pr-4 py-3 text-base outline-none focus:border-brand-500" placeholder={tab === 'COMPLETED' ? 'Search installed item…' : 'Search name, area, pincode…'} value={search} onChange={(e) => setSearch(e.target.value)} />
+            <input className="w-full rounded-2xl bg-white border border-slate-200 pl-11 pr-4 py-3 text-base outline-none focus:border-brand-500" placeholder={tab === 'COMPLETED' ? 'Search item, area, pincode…' : 'Search name, area, pincode…'} value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
         )}
         {error && <div className="rounded-2xl bg-red-50 border border-red-200 p-4 text-sm text-red-700">{errMsg(error)} <button onClick={() => refetch()} className="underline font-semibold ml-1">Retry</button></div>}
-        {isLoading ? Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-36 rounded-3xl bg-white animate-pulse" />)
-          : list.length === 0 ? (
-            <div className="text-center py-16 px-6">
-              <div className="w-16 h-16 mx-auto rounded-full bg-white flex items-center justify-center mb-3">{tab === 'PENDING' ? <CheckCircle2 size={30} className="text-emerald-500" /> : <Clock size={28} className="text-slate-300" />}</div>
-              <p className="font-semibold text-slate-700">{search ? 'No matching jobs' : tab === 'PENDING' ? 'No pending jobs' : `Nothing here in the last ${historyDays} days`}</p>
-              {tab === 'PENDING' && !search && <p className="text-sm text-slate-500 mt-1">New jobs appear here automatically when the office assigns them.</p>}
-            </div>
-          ) : list.map((j) => j.status === 'COMPLETED' ? <DoneCard key={j.id} job={j} /> : <JobCard key={j.id} job={j} isNew={newIds.has(j.id)} onOpen={() => openJob(j.id)} />)}
-        {tab !== 'PENDING' && !isLoading && historyDays === HISTORY_SHORT && (
-          <button onClick={() => setHistoryDays(HISTORY_LONG)} className="w-full py-3 rounded-2xl border-2 border-dashed border-slate-300 text-sm font-semibold text-slate-600 active:bg-white">
-            Showing last {HISTORY_SHORT} days · Show last {HISTORY_LONG} days
-          </button>
-        )}
+        {tab === 'COMPLETED' ? <DoneCalendar technicianId={technician?.id} search={search}>{oldList}</DoneCalendar> : oldList}
       </main>
 
       <WelcomeModal mobile name={user?.name} badge={technician?.tech_code ? `Technician ID · ${technician.tech_code}` : 'Technician'}

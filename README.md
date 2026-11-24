@@ -334,3 +334,9 @@ Reading the Google Sheet (or uploading Excel) again no longer turns an order tha
 - **Technicians screen (admin):** tick the box on technician cards, or **Select all** (selects every technician in the current view / search) → **Delete** → admin password.
 - A deleted technician disappears from Technicians, **Technician Payout**, assign lists and suggestions; his HT Jobs login is switched off; his Pending / Rescheduled jobs become **Unassigned**; old completed jobs keep his name in Installation Orders / Repairs / Reports. His mobile number and name can be used again for a new technician. The Google Sheet / Excel TECHNICIAN column never matches a deleted technician. Audit Log records each delete.
 - The Technician Payout screen itself has no delete.
+
+## Update — Nov 2026 (14): HT Jobs "Done" calendar
+
+**Run once:** Supabase → SQL Editor → paste `2-Supabase-Setup/update-2026-11-tech-done-calendar.sql` → **Run**. (Until then the Done tab shows the old list.)
+
+HT Jobs → **Done** now has a month calendar (‹ › to change month; days with work are green with the job count). Tap a day, **Today** or **Whole month** to see: jobs done, total **earned** (Rate Config rate, Chennai / Outside) and **cash collected**, and for each job the Order ID, installed / repaired item, customer, **location and pin code**, time, **Earned ₹** and **Cash collected ₹** (or *Paid on Amazon*), REPAIR badge and photos. The search box filters by item, area, pin code, order ID or customer.
