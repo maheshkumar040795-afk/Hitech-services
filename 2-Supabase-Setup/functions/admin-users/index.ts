@@ -10,7 +10,7 @@
 //    set_tech_login      { technician_id, password }   create OR reset technician app login
 //    set_password        { user_id, password }
 //    set_active          { user_id, active: boolean }   block / unblock login
-//    delete_users        { user_ids: string[] }         delete logins for good (not yourself, not the last admin)
+//    delete_users        { user_ids: string[] }         delete technician app logins for good (office logins cannot be deleted)
 //
 //  Deploy:  Supabase Dashboard → Edge Functions → Deploy new function → name "admin-users"
 //           → paste this file → Deploy.   (or: supabase functions deploy admin-users)
@@ -170,20 +170,17 @@ Deno.serve(async (req) => {
       case 'delete_users': {
         const ids: string[] = Array.isArray(body.user_ids) ? [...new Set(body.user_ids.filter((x: unknown) => typeof x === 'string'))] as string[] : []
         if (!ids.length) bad('Select at least one user')
-        if (ids.includes(caller.id)) bad('You cannot delete your own login')
         const { data: rows } = await admin.from('profiles').select('id, name, login, role, is_active').in('id', ids)
-        // never leave the app without an active admin
-        const { count: admins } = await admin.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'ADMIN').eq('is_active', true)
-        const delAdmins = (rows ?? []).filter((r) => r.role === 'ADMIN' && r.is_active).length
-        if ((admins ?? 0) - delAdmins < 1) bad('At least one active admin must remain')
+        // only technician (HT Jobs) logins can be deleted; office logins: use Disable
+        if ((rows ?? []).some((r) => r.role !== 'TECHNICIAN')) bad('Only technician logins can be deleted. Use Disable for office users.')
         const deleted: string[] = [], failed: string[] = []
         for (const r of rows ?? []) {
-          // technician app login → unlink from the technician first (the technician stays)
-          if (r.role === 'TECHNICIAN') await admin.from('technicians').update({ user_id: null }).eq('user_id', r.id)
+          // unlink from the technician first (the technician stays on the Technicians screen)
+          await admin.from('technicians').update({ user_id: null }).eq('user_id', r.id)
           const { error } = await admin.auth.admin.deleteUser(r.id)   // profile row goes with it; history keeps the records
           if (error) { failed.push(`${r.name}: ${error.message}`); continue }
           deleted.push(r.name)
-          await audit('USER_DELETED', r.id, `Deleted ${r.role === 'TECHNICIAN' ? 'technician app' : r.role === 'ADMIN' ? 'admin' : 'office'} login ${r.name} (${r.login})`)
+          await audit('USER_DELETED', r.id, `Deleted technician app login ${r.name} (${r.login})`)
         }
         if (!deleted.length && failed.length) bad(failed.join('; '))
         return json({ ok: true, deleted: deleted.length, failed })

@@ -341,12 +341,10 @@ Reading the Google Sheet (or uploading Excel) again no longer turns an order tha
 
 HT Jobs → **Done** now has a month calendar (‹ › to change month; days with work are green with the job count). Tap a day, **Today** or **Whole month** to see: jobs done, total **earned** (Rate Config rate, Chennai / Outside) and **cash collected**, and for each job the Order ID, installed / repaired item, customer, **location and pin code**, time, **Earned ₹** and **Cash collected ₹** (or *Paid on Amazon*), REPAIR badge and photos. The search box filters by item, area, pin code, order ID or customer.
 
-## Update — Nov 2026 (15): Delete logins on the Users screen
+## Update — Nov 2026 (15): Delete technician logins on the Users screen
 
-**Update the Edge Function once:** Supabase → **Edge Functions → admin-users → Code** → replace everything with `2-Supabase-Setup/functions/admin-users/index.ts` → **Deploy** (keep *Verify JWT* on). No SQL to run.
+**Update the Edge Function once:** Supabase → **Edge Functions → admin-users → Code** → replace everything with `2-Supabase-Setup/functions/admin-users/index.ts` → **Deploy updates** (keep *Verify JWT* on). No SQL to run.
 
-- **Users screen:** tick the box on a row, or the header box (**Select all** in the current tab: Office or Technicians) → **Delete** → admin password.
-- The login is deleted for good: the person can no longer log in and is removed from Users; the same email can be used again later. Past orders, logs, bills and payouts are kept (they just no longer link to that login).
-- Your own login cannot be ticked, and the last active admin can never be deleted.
-- Technicians tab: deleting removes only the **HT Jobs app login**; the technician stays on the Technicians screen (to remove the technician too, delete him on the Technicians screen).
-- Audit Log records each deleted login.
+- **Users → Technicians (app) tab:** tick a row, or the header box (**Select all**) → **Delete** → admin password.
+- Deletes only the technician's **HT Jobs app login**; the technician stays on the Technicians screen (enable a new app login there any time). Past jobs and logs are kept. Audit Log records each delete.
+- **Office (web) logins cannot be deleted** (no tick boxes there, and the Edge Function refuses it). Use **Disable** for office users.

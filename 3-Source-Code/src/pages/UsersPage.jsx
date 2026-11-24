@@ -51,17 +51,17 @@ export default function UsersPage() {
   }
 
   const list = users.filter((u) => (tab === 'office' ? u.role !== 'TECHNICIAN' : u.role === 'TECHNICIAN'))
-  const selectable = list.filter((u) => u.id !== me.id)   // you cannot delete your own login
+  const canDelete = tab === 'tech'   // only technician (HT Jobs) logins can be deleted; office users: Disable
+  const selectable = canDelete ? list.filter((u) => u.role === 'TECHNICIAN') : []
   const sel = selectable.filter((u) => selected.has(u.id))
   const allOn = selectable.length > 0 && sel.length === selectable.length
   const toggle = (id) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
   const deleteSelected = async () => {
     if (!sel.length) return
     const names = sel.map((u) => u.name)
-    const techs = sel.some((u) => u.role === 'TECHNICIAN')
     const ok = await askPassword({
-      title: `Delete ${sel.length} login${sel.length > 1 ? 's' : ''}?`,
-      message: `${names.slice(0, 5).join(', ')}${names.length > 5 ? ` and ${names.length - 5} more` : ''}\n\nThey can no longer log in and are removed from Users.${techs ? ' Technicians stay on the Technicians screen (only their app login is removed).' : ''} Past orders and logs are kept.`,
+      title: `Delete ${sel.length} technician login${sel.length > 1 ? 's' : ''}?`,
+      message: `${names.slice(0, 5).join(', ')}${names.length > 5 ? ` and ${names.length - 5} more` : ''}\n\nTheir HT Jobs app login is deleted. The technicians stay on the Technicians screen (you can enable a new app login there later). Past jobs and logs are kept.`,
     })
     if (!ok) return
     setBusy(true)
@@ -133,14 +133,14 @@ export default function UsersPage() {
       <div className="card p-0 overflow-hidden"><div className="overflow-x-auto">
         <table className="w-full">
           <thead><tr className="bg-slate-50 border-b border-slate-200">
-            <th className="pl-4 py-3 w-8"><input type="checkbox" aria-label="Select all" className="w-4 h-4 accent-red-600" checked={allOn} disabled={!selectable.length}
-              onChange={() => setSelected(allOn ? new Set() : new Set(selectable.map((u) => u.id)))} /></th>
+            {canDelete && <th className="pl-4 py-3 w-8"><input type="checkbox" aria-label="Select all" className="w-4 h-4 accent-red-600" checked={allOn} disabled={!selectable.length}
+              onChange={() => setSelected(allOn ? new Set() : new Set(selectable.map((u) => u.id)))} /></th>}
             {['Name', 'Login', 'Role', 'Status', 'Since', 'Actions'].map((h) => <th key={h} className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wide">{h}</th>)}</tr></thead>
           <tbody>
-            {isLoading ? <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-400">Loading…</td></tr>
+            {isLoading ? <tr><td colSpan={canDelete ? 7 : 6} className="px-4 py-8 text-center text-sm text-slate-400">Loading…</td></tr>
               : list.map((u) => (
-                <tr key={u.id} className={`border-b border-slate-50 hover:bg-slate-50/80 ${selected.has(u.id) && u.id !== me.id ? 'bg-red-50/50' : ''}`}>
-                  <td className="pl-4 py-3 w-8">{u.id !== me.id && <input type="checkbox" aria-label={`Select ${u.name}`} className="w-4 h-4 accent-red-600" checked={selected.has(u.id)} onChange={() => toggle(u.id)} />}</td>
+                <tr key={u.id} className={`border-b border-slate-50 hover:bg-slate-50/80 ${canDelete && selected.has(u.id) ? 'bg-red-50/50' : ''}`}>
+                  {canDelete && <td className="pl-4 py-3 w-8">{u.role === 'TECHNICIAN' && <input type="checkbox" aria-label={`Select ${u.name}`} className="w-4 h-4 accent-red-600" checked={selected.has(u.id)} onChange={() => toggle(u.id)} />}</td>}
                   <td className="px-4 py-3"><div className="flex items-center gap-2.5"><div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center text-xs font-bold text-brand-700">{u.name[0]?.toUpperCase()}</div>
                     <span className="text-sm font-semibold text-slate-800">{u.name}{u.id === me.id && <span className="text-xs text-slate-400 font-normal"> (you)</span>}</span></div></td>
                   <td className="px-4 py-3 text-xs text-slate-600 font-mono">{u.login}</td>
@@ -159,7 +159,7 @@ export default function UsersPage() {
                       className={`text-[11px] px-2.5 py-1 rounded-lg border ${u.is_active ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>{u.is_active ? 'Disable' : 'Enable'}</button>}
                   </div></td>
                 </tr>))}
-            {!isLoading && !list.length && <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-400">No users</td></tr>}
+            {!isLoading && !list.length && <tr><td colSpan={canDelete ? 7 : 6} className="px-4 py-8 text-center text-sm text-slate-400">No users</td></tr>}
           </tbody>
         </table>
       </div></div>
