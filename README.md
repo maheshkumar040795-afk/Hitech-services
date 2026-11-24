@@ -326,3 +326,11 @@ No SQL to run.
 **Run once:** Supabase → SQL Editor → paste `2-Supabase-Setup/update-2026-11-import-keep-rescheduled.sql` → **Run**.
 
 Reading the Google Sheet (or uploading Excel) again no longer turns an order that the office **rescheduled** back into **Pending** (the sheet still says NOT_SERVICED). Only COMPLETED / REJECTED from the sheet change a rescheduled order. Reminder: a technician assigned on screen is kept when the sheet's TECHNICIAN cell is empty; a name / ID in that cell replaces it for Pending orders.
+
+## Update — Nov 2026 (13): Delete technicians
+
+**Run once:** Supabase → SQL Editor → paste `2-Supabase-Setup/update-2026-11-delete-technicians.sql` → **Run**.
+
+- **Technicians screen (admin):** tick the box on technician cards, or **Select all** (selects every technician in the current view / search) → **Delete** → admin password.
+- A deleted technician disappears from Technicians, **Technician Payout**, assign lists and suggestions; his HT Jobs login is switched off; his Pending / Rescheduled jobs become **Unassigned**; old completed jobs keep his name in Installation Orders / Repairs / Reports. His mobile number and name can be used again for a new technician. The Google Sheet / Excel TECHNICIAN column never matches a deleted technician. Audit Log records each delete.
+- The Technician Payout screen itself has no delete.

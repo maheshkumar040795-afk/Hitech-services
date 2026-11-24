@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Search, MapPin, Phone, X, BadgeCheck, Upload, Download, Smartphone, KeyRound, Ban, Pencil, Copy, MessageCircle, Power, ClipboardList, IndianRupee } from 'lucide-react'
+import { Plus, Search, MapPin, Phone, X, BadgeCheck, Upload, Download, Smartphone, KeyRound, Ban, Pencil, Copy, MessageCircle, Power, ClipboardList, IndianRupee, Trash2 } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { supabase, rpc, errMsg, adminAction } from '../lib/supabase'
 import { fmtMoney, todayIST, waUrl, techLabel } from '../lib/format'
@@ -11,6 +11,7 @@ import { useAuth } from '../context/AuthContext'
 import { useTechnicians, useTechStats, usePinResets, resolvePinResets } from '../hooks/useData'
 import Modal, { Field } from '../components/Modal'
 import TechFinanceModal from '../components/TechFinanceModal'
+import { usePasswordConfirm } from '../components/PasswordConfirm'
 import { useOnlineTechs, techStatus, STATUS_META, ago } from '../hooks/usePresence'
 
 const EMPTY = { tech_code: '', name: '', mobile: '', city: '', district: '', pincode: '', aadhar: '' }
@@ -212,6 +213,8 @@ export default function TechniciansPage() {
   const [shown, setShown] = useState(24)
   const [profileId, setProfileId] = useState(null)
   const [financeTech, setFinanceTech] = useState(null)   // ₹ Finance popup (admin)
+  const [selected, setSelected] = useState(() => new Set())   // admin: technicians ticked for Delete
+  const askPassword = usePasswordConfirm()
   const [form, setForm] = useState(null) // null | 'new' | tech
   const [loginFor, setLoginFor] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -235,6 +238,25 @@ export default function TechniciansPage() {
   const list = techs.filter((t) => inView(t) &&
     (!q || t.name.toLowerCase().includes(q) || t.tech_code?.toLowerCase().includes(q) || t.city?.toLowerCase().includes(q) || t.district?.toLowerCase().includes(q) || t.mobile?.includes(q)))
   const visible = list.slice(0, shown)
+  const toggle = (id) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const allOn = list.length > 0 && list.every((t) => selected.has(t.id))
+  const deleteSelected = async () => {
+    const ids = [...selected], names = techs.filter((t) => selected.has(t.id)).map((t) => t.name)
+    if (!ids.length) return
+    const ok = await askPassword({
+      title: `Delete ${ids.length} technician${ids.length > 1 ? 's' : ''}?`,
+      message: `${names.slice(0, 5).join(', ')}${names.length > 5 ? ` and ${names.length - 5} more` : ''}\n\nThey will be removed from Technicians and Technician Payout, their HT Jobs login is switched off, and their Pending / Rescheduled jobs become Unassigned. Old completed jobs keep their name.`,
+    })
+    if (!ok) return
+    setBusy(true)
+    try {
+      const n = await rpc('delete_technicians', { p_ids: ids })
+      toast(`${n} technician${n === 1 ? '' : 's'} deleted`, 'success')
+      setSelected(new Set()); refresh(); qc.invalidateQueries({ queryKey: ['orders'] }); qc.invalidateQueries({ queryKey: ['payout'] })
+    } catch (e) {
+      toast(/delete_technicians|schema cache|Could not find the function/i.test(e?.message || '') ? 'Run update-2026-11-delete-technicians.sql in Supabase first' : errMsg(e), 'error')
+    } finally { setBusy(false) }
+  }
   const profileTech = techs.find((t) => t.id === profileId)
 
   const importFile = async (e) => {
@@ -326,6 +348,12 @@ export default function TechniciansPage() {
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input className="input pl-9 py-2" placeholder="Search ID, name, city or mobile…" value={search} onChange={(e) => { setSearch(e.target.value); setShown(24) }} />
         </div>
+        {isAdmin && list.length > 0 && (
+          <label className="flex items-center gap-2 text-xs font-semibold text-slate-600 cursor-pointer select-none px-2">
+            <input type="checkbox" className="w-4 h-4 accent-brand-600" checked={allOn}
+              onChange={() => setSelected(allOn ? new Set() : new Set(list.map((t) => t.id)))} /> Select all ({list.length})
+          </label>
+        )}
         <div className="flex gap-1 flex-wrap">
           {VIEWS.map(([k, l, fn]) => (
             <button key={k} onClick={() => { setView(k); setShown(24) }} className={`chip ${view === k ? 'chip-on' : 'chip-off'}`}>
@@ -334,6 +362,14 @@ export default function TechniciansPage() {
           ))}
         </div>
       </div>
+
+      {isAdmin && selected.size > 0 && (
+        <div className="card p-3 bg-red-50/60 border-red-200 flex flex-wrap items-center gap-3">
+          <span className="text-sm font-semibold text-red-700">{selected.size} technician{selected.size > 1 ? 's' : ''} selected</span>
+          <button disabled={busy} onClick={deleteSelected} className="btn-danger text-xs py-1.5"><Trash2 size={12} /> Delete</button>
+          <button onClick={() => setSelected(new Set())} className="btn-secondary text-xs py-1.5 ml-auto"><X size={13} /></button>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="card p-5 h-36 animate-pulse bg-slate-50" />)}</div>
@@ -344,9 +380,11 @@ export default function TechniciansPage() {
             const ls = loginState(t)
             const rate = s.total > 0 ? Math.round((s.completed / s.total) * 100) : 0
             return (
-              <div key={t.id} onClick={() => setProfileId(t.id)} className={`card p-5 cursor-pointer hover:shadow-md transition-all ${!t.is_active ? 'opacity-60' : ''}`}>
+              <div key={t.id} onClick={() => setProfileId(t.id)} className={`card p-5 cursor-pointer hover:shadow-md transition-all ${!t.is_active ? 'opacity-60' : ''} ${selected.has(t.id) ? 'ring-2 ring-red-400' : ''}`}>
                 <div className="flex items-start justify-between mb-3 gap-2">
                   <div className="flex items-center gap-3 min-w-0">
+                    {isAdmin && <input type="checkbox" aria-label={`Select ${t.name}`} className="w-4 h-4 accent-red-600 flex-shrink-0 cursor-pointer" checked={selected.has(t.id)}
+                      onClick={(e) => e.stopPropagation()} onChange={() => toggle(t.id)} />}
                     <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-brand-600 to-sky-500 flex items-center justify-center text-white font-heading font-extrabold flex-shrink-0 shadow-[inset_0_1px_0_rgba(255,255,255,.3),0_8px_16px_-8px_rgba(53,73,232,.7)]">{t.name[0]}</div>
                     <div className="min-w-0">
                       <p className="font-semibold text-sm text-slate-900 truncate">{t.name}{t.tech_code && <span className="ml-1.5 text-[10px] font-mono font-semibold text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded">{t.tech_code}</span>}</p>

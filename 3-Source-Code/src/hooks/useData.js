@@ -1,10 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase, rpc } from '../lib/supabase'
 
-/** All technicians (+ whether their app login is active) */
-export function useTechnicians() {
+/**
+ * All technicians (+ whether their app login is active).
+ * Deleted technicians are left out, except with { withDeleted: true } (Payout uses it to drop their rows).
+ */
+const notDeleted = (list) => (list || []).filter((t) => !t.deleted_at)
+export function useTechnicians({ withDeleted = false } = {}) {
   return useQuery({
     queryKey: ['technicians'],
+    select: withDeleted ? undefined : notDeleted,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('technicians')

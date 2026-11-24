@@ -30,7 +30,7 @@ const regionOf = (o) => o.region || (!o.pin_code || String(o.pin_code).trim().st
  *   Net pay = Earned − collected.  "Paid on Amazon" jobs: nothing collected, full rate is paid.
  */
 export default function PayoutPage() {
-  const { data: techs = [] } = useTechnicians()
+  const { data: techs = [] } = useTechnicians({ withDeleted: true })   // deleted technicians are found here, then left out
   const [quick, setQuick] = useState('today')
   const [range, setRange] = useState([todayIST(), todayIST()])
   const [from, to] = range
@@ -125,6 +125,8 @@ export default function PayoutPage() {
       const t = byTech.get(e.technician_id) || { id: e.technician_id, jobs: [] }
       ;(t.finance ||= []).push(e); byTech.set(e.technician_id, t)
     }
+    const deleted = new Set(techs.filter((t) => t.deleted_at).map((t) => t.id))
+    for (const id of deleted) byTech.delete(id)   // technician deleted on the Technicians screen → not in Payout
     return [...byTech.values()].map((t) => {
       const info = techs.find((x) => x.id === t.id) || { name: 'Unknown technician' }
       const earned = t.jobs.reduce((s, j) => s + (j.rate || 0), 0)
