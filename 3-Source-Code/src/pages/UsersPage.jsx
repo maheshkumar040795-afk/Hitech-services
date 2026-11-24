@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Eye, EyeOff, KeyRound, Smartphone } from 'lucide-react'
+import { Plus, Eye, EyeOff, KeyRound, Smartphone, Trash2, X } from 'lucide-react'
 import { supabase, adminAction } from '../lib/supabase'
 import { fmtDate } from '../lib/format'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
 import Modal, { Field } from '../components/Modal'
+import { usePasswordConfirm } from '../components/PasswordConfirm'
 
 const ROLE_STYLE = { ADMIN: 'bg-purple-50 text-purple-700', STAFF: 'bg-blue-50 text-blue-700', TECHNICIAN: 'bg-emerald-50 text-emerald-700' }
 const ROLE_LABEL = { ADMIN: 'Admin', STAFF: 'Office Staff', TECHNICIAN: 'Technician' }
@@ -21,6 +22,8 @@ export default function UsersPage() {
   const [pw, setPw] = useState('')
   const [showPw, setShowPw] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [selected, setSelected] = useState(() => new Set())
+  const askPassword = usePasswordConfirm()
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ['users'],
@@ -48,6 +51,29 @@ export default function UsersPage() {
   }
 
   const list = users.filter((u) => (tab === 'office' ? u.role !== 'TECHNICIAN' : u.role === 'TECHNICIAN'))
+  const selectable = list.filter((u) => u.id !== me.id)   // you cannot delete your own login
+  const sel = selectable.filter((u) => selected.has(u.id))
+  const allOn = selectable.length > 0 && sel.length === selectable.length
+  const toggle = (id) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const deleteSelected = async () => {
+    if (!sel.length) return
+    const names = sel.map((u) => u.name)
+    const techs = sel.some((u) => u.role === 'TECHNICIAN')
+    const ok = await askPassword({
+      title: `Delete ${sel.length} login${sel.length > 1 ? 's' : ''}?`,
+      message: `${names.slice(0, 5).join(', ')}${names.length > 5 ? ` and ${names.length - 5} more` : ''}\n\nThey can no longer log in and are removed from Users.${techs ? ' Technicians stay on the Technicians screen (only their app login is removed).' : ''} Past orders and logs are kept.`,
+    })
+    if (!ok) return
+    setBusy(true)
+    try {
+      const r = await adminAction('delete_users', { user_ids: sel.map((u) => u.id) })
+      toast(`${r.deleted} login${r.deleted === 1 ? '' : 's'} deleted${r.failed?.length ? ` · not deleted: ${r.failed.join('; ')}` : ''}`, r.failed?.length ? 'error' : 'success')
+      setSelected(new Set())
+      qc.invalidateQueries({ queryKey: ['users'] }); qc.invalidateQueries({ queryKey: ['technicians'] })
+    } catch (e) {
+      toast(/Unknown action/i.test(e.message || '') ? 'Update the admin-users Edge Function first (README → Update 15)' : e.message, 'error')
+    } finally { setBusy(false) }
+  }
 
   return (
     <div className="space-y-4">
@@ -89,20 +115,32 @@ export default function UsersPage() {
 
       <div className="flex gap-1">
         {[['office', 'Office (web)'], ['tech', 'Technicians (app)']].map(([k, l]) => (
-          <button key={k} onClick={() => setTab(k)} className={`chip px-3 ${tab === k ? 'chip-on' : 'chip-off'}`}>
+          <button key={k} onClick={() => { setTab(k); setSelected(new Set()) }} className={`chip px-3 ${tab === k ? 'chip-on' : 'chip-off'}`}>
             {l} ({users.filter((u) => (k === 'office' ? u.role !== 'TECHNICIAN' : u.role === 'TECHNICIAN')).length})
           </button>
         ))}
       </div>
       {tab === 'tech' && <p className="text-xs text-slate-500 flex items-center gap-1.5"><Smartphone size={12} /> To add a technician login, go to Technicians → open the technician → Enable app login.</p>}
 
+      {sel.length > 0 && (
+        <div className="card p-3 bg-red-50/60 border-red-200 flex flex-wrap items-center gap-3">
+          <span className="text-sm font-semibold text-red-700">{sel.length} login{sel.length > 1 ? 's' : ''} selected</span>
+          <button disabled={busy} onClick={deleteSelected} className="btn-danger text-xs py-1.5"><Trash2 size={12} /> Delete</button>
+          <button onClick={() => setSelected(new Set())} className="btn-secondary text-xs py-1.5 ml-auto"><X size={13} /></button>
+        </div>
+      )}
+
       <div className="card p-0 overflow-hidden"><div className="overflow-x-auto">
         <table className="w-full">
-          <thead><tr className="bg-slate-50 border-b border-slate-200">{['Name', 'Login', 'Role', 'Status', 'Since', 'Actions'].map((h) => <th key={h} className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wide">{h}</th>)}</tr></thead>
+          <thead><tr className="bg-slate-50 border-b border-slate-200">
+            <th className="pl-4 py-3 w-8"><input type="checkbox" aria-label="Select all" className="w-4 h-4 accent-red-600" checked={allOn} disabled={!selectable.length}
+              onChange={() => setSelected(allOn ? new Set() : new Set(selectable.map((u) => u.id)))} /></th>
+            {['Name', 'Login', 'Role', 'Status', 'Since', 'Actions'].map((h) => <th key={h} className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wide">{h}</th>)}</tr></thead>
           <tbody>
-            {isLoading ? <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-400">Loading…</td></tr>
+            {isLoading ? <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-400">Loading…</td></tr>
               : list.map((u) => (
-                <tr key={u.id} className="border-b border-slate-50 hover:bg-slate-50/80">
+                <tr key={u.id} className={`border-b border-slate-50 hover:bg-slate-50/80 ${selected.has(u.id) && u.id !== me.id ? 'bg-red-50/50' : ''}`}>
+                  <td className="pl-4 py-3 w-8">{u.id !== me.id && <input type="checkbox" aria-label={`Select ${u.name}`} className="w-4 h-4 accent-red-600" checked={selected.has(u.id)} onChange={() => toggle(u.id)} />}</td>
                   <td className="px-4 py-3"><div className="flex items-center gap-2.5"><div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center text-xs font-bold text-brand-700">{u.name[0]?.toUpperCase()}</div>
                     <span className="text-sm font-semibold text-slate-800">{u.name}{u.id === me.id && <span className="text-xs text-slate-400 font-normal"> (you)</span>}</span></div></td>
                   <td className="px-4 py-3 text-xs text-slate-600 font-mono">{u.login}</td>
@@ -121,7 +159,7 @@ export default function UsersPage() {
                       className={`text-[11px] px-2.5 py-1 rounded-lg border ${u.is_active ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>{u.is_active ? 'Disable' : 'Enable'}</button>}
                   </div></td>
                 </tr>))}
-            {!isLoading && !list.length && <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-400">No users</td></tr>}
+            {!isLoading && !list.length && <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-400">No users</td></tr>}
           </tbody>
         </table>
       </div></div>

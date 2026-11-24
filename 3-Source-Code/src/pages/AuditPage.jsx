@@ -14,6 +14,7 @@ const ACTION_META = {
   TECH_UNASSIGNED: ['Unassigned', 'bg-amber-100 text-amber-700'],
   PHOTOS_UPDATED: ['Photos', 'bg-teal-100 text-teal-700'],
   TECH_DELETED: ['Technician deleted', 'bg-red-100 text-red-700'],
+  USER_DELETED: ['Login deleted', 'bg-red-100 text-red-700'],
   FINANCE_ADDED: ['Finance added', 'bg-sky-100 text-sky-700'],
   FINANCE_DELETED: ['Finance deleted', 'bg-rose-100 text-rose-700'],
   AMOUNT_UPDATED: ['Amount', 'bg-teal-100 text-teal-700'],
