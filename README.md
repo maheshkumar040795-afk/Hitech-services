@@ -348,3 +348,19 @@ HT Jobs → **Done** now has a month calendar (‹ › to change month; days wit
 - **Users → Technicians (app) tab:** tick a row, or the header box (**Select all**) → **Delete** → admin password.
 - Deletes only the technician's **HT Jobs app login**; the technician stays on the Technicians screen (enable a new app login there any time). Past jobs and logs are kept. Audit Log records each delete.
 - **Office (web) logins cannot be deleted** (no tick boxes there, and the Edge Function refuses it). Use **Disable** for office users.
+
+## Update — Nov 2026 (16): HT Jobs in Tamil + works without internet
+
+No SQL to run. The office web app stays in English.
+
+**Tamil / English (technician app only)**
+- HT Jobs opens in **Tamil** by default. The **தமிழ் | EN** switch is at the top of every screen, on the login screen and in My account; each phone remembers its choice.
+- Covers jobs, job details, Mark Completed / Can't complete, photos, salary cards and details, Done calendar (Tamil month and weekday names), login, Forgot PIN, notifications banner and update / install banners.
+- The "Can't complete" reason is still sent to the office in English. All Tamil text is in `3-Source-Code/src/tech/i18n.jsx` (one line per sentence) — easy to correct a word.
+
+**Offline mode**
+- The app opens without internet (the app and the technician's profile are saved on the phone) and shows the **last loaded jobs, salary cards, item lists and Done calendar**.
+- **Mark Completed** (with photos) and **Can't complete** work offline: they are saved on the phone, the job moves to Done / Not done with a *Waiting to send* tag, and a bar shows "N updates waiting to send" with **Send now**.
+- When the internet is back, everything is sent automatically (also every 20 seconds and whenever the app is opened): photos are uploaded first, then the job is completed. If the office changed the job meanwhile (reassigned, cancelled), the server's version wins and the technician sees "Could not update …".
+- Notes, Re-open and the Done calendar's newest data need internet.
+- Note: a job completed offline gets its completion time when it reaches the server.

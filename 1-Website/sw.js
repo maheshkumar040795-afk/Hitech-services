@@ -1,6 +1,7 @@
-/* Hitech Services service worker — makes the app installable; job data is never cached */
-const CACHE = 'hitech-v16'
-const SHELL = ['./', './index.html', './offline.html', './config.js', './manifest.json', './manifest-tech.json', './logo.png', './logo-160.png', './tech/']
+/* Hitech Services service worker — makes the app installable and lets HT Jobs open offline (job data is saved by the app itself) */
+const CACHE = 'hitech-v17'
+// app.js is saved at install, so HT Jobs opens without internet even right after it was installed
+const SHELL = ['./', './index.html', './offline.html', './config.js', './manifest.json', './manifest-tech.json', './logo.png', './logo-160.png', './tech/', './assets/app.js']
 
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL))) })
 self.addEventListener('activate', (e) => {

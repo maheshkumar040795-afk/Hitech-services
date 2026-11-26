@@ -1,11 +1,15 @@
 import { useEffect, useRef } from 'react'
-import { Camera, ImagePlus, X, Loader2, RotateCcw, AlertTriangle } from 'lucide-react'
+import { Camera, ImagePlus, X, Loader2, RotateCcw, AlertTriangle, CloudOff } from 'lucide-react'
 import { compressImage, uploadPhoto, photoThumb, MAX_PHOTOS, PHOTOS_REQUIRED } from '../lib/photos'
+import { tr as t } from './i18n'
+import { isNetworkError } from './offline'
 
 let seq = 0
 /** Saved links → picker items */
 export const photoItems = (urls) => (urls || []).map((url) => ({ key: `p${++seq}`, url, status: 'done' }))
 export const photoUrls = (items) => items.filter((p) => p.status === 'done').map((p) => p.url)
+/** Photos taken without internet: kept on the phone (compressed), uploaded later by the offline queue */
+export const offlinePhotos = (items) => items.filter((p) => p.status === 'offline' && p.blob).map((p) => p.blob)
 
 /**
  * Installation photos for HT Jobs: take with the camera or pick from the gallery (max 10).
@@ -21,10 +25,18 @@ export default function PhotoPicker({ items, setItems, orderId, techCode }) {
 
   const patch = (key, p) => setItems((list) => list.map((x) => (x.key === key ? { ...x, ...p } : x)))
   const send = async (key, blob) => {
+    if (navigator.onLine === false) return patch(key, { status: 'offline', error: '' })   // no internet: keep it, upload later
     patch(key, { status: 'uploading', error: '' })
     try { patch(key, { status: 'done', url: await uploadPhoto(blob, { orderId, techCode }) }) }
-    catch (e) { patch(key, { status: 'error', error: navigator.onLine === false ? 'No internet' : e.message }) }
+    catch (e) { patch(key, isNetworkError(e) ? { status: 'offline', error: '' } : { status: 'error', error: e.message }) }
   }
+  // Internet back while this screen is open → upload the waiting photos now
+  const itemsRef = useRef(items); itemsRef.current = items
+  useEffect(() => {
+    const on = () => itemsRef.current.filter((p) => p.status === 'offline' && p.blob).forEach((p) => send(p.key, p.blob))
+    window.addEventListener('online', on)
+    return () => window.removeEventListener('online', on)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const add = async (e) => {
     const files = [...(e.target.files || [])]; e.target.value = ''
     const room = MAX_PHOTOS - items.length
@@ -35,7 +47,7 @@ export default function PhotoPicker({ items, setItems, orderId, techCode }) {
       previews.current.add(preview)
       setItems((list) => [...list, { key, status: 'uploading', preview }])
       try { const blob = await compressImage(file); patch(key, { blob }); send(key, blob) }   // blob kept for Retry
-      catch { patch(key, { status: 'error', error: 'Could not read this photo' }) }
+      catch { patch(key, { status: 'error', error: t('Could not read this photo') }) }
     }
   }
   const remove = (key) => setItems((list) => list.filter((x) => x.key !== key))
@@ -46,16 +58,16 @@ export default function PhotoPicker({ items, setItems, orderId, techCode }) {
   return (
     <div>
       <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 mb-2">
-        <Camera size={15} /> Installation photos {PHOTOS_REQUIRED ? <span className="text-red-600">*</span> : <span className="font-normal text-slate-400">(optional)</span>}
+        <Camera size={15} /> {t('Installation photos')} {PHOTOS_REQUIRED ? <span className="text-red-600">*</span> : <span className="font-normal text-slate-400">{t('(optional)')}</span>}
         <span className="ml-auto text-xs font-medium text-slate-400">{items.length}/{MAX_PHOTOS}</span>
       </label>
       <div className="grid grid-cols-2 gap-2">
         <button type="button" disabled={full} onClick={() => camRef.current?.click()}
           className="py-3.5 rounded-2xl bg-emerald-600 active:bg-emerald-700 text-white font-bold text-sm flex flex-col items-center gap-1 disabled:opacity-40">
-          <Camera size={22} /> Take photo</button>
+          <Camera size={22} /> {t('Take photo')}</button>
         <button type="button" disabled={full} onClick={() => galRef.current?.click()}
           className="py-3.5 rounded-2xl border-2 border-emerald-500 bg-emerald-50 text-emerald-700 font-bold text-sm flex flex-col items-center gap-1 active:bg-emerald-100 disabled:opacity-40">
-          <ImagePlus size={22} /> Upload from gallery</button>
+          <ImagePlus size={22} /> {t('Upload from gallery')}</button>
       </div>
       <input ref={camRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={add} />
       <input ref={galRef} type="file" accept="image/*" multiple className="hidden" onChange={add} />
@@ -66,18 +78,21 @@ export default function PhotoPicker({ items, setItems, orderId, techCode }) {
             <div key={p.key} className={`relative aspect-square rounded-xl overflow-hidden bg-slate-100 border-2 ${p.status === 'error' ? 'border-red-400' : 'border-transparent'}`}>
               <img src={p.preview || photoThumb(p.url)} alt="" className="w-full h-full object-cover" />
               {p.status === 'uploading' && <div className="absolute inset-0 bg-black/40 flex items-center justify-center"><Loader2 size={22} className="text-white animate-spin" /></div>}
+              {p.status === 'offline' && <div title={t('Will upload when online')} className="absolute inset-x-0 bottom-0 bg-amber-500/90 text-white text-[9px] font-bold py-0.5 flex items-center justify-center gap-0.5"><CloudOff size={10} /> {t('No internet')}</div>}
               {p.status === 'error' && (
                 <button type="button" onClick={() => retry(p)} title={p.error} className="absolute inset-0 bg-red-900/50 flex flex-col items-center justify-center text-white text-[10px] font-bold gap-0.5">
-                  {p.blob ? <><RotateCcw size={18} /> Retry</> : <><AlertTriangle size={18} /> Failed</>}</button>
+                  {p.blob ? <><RotateCcw size={18} /> {t('Retry')}</> : <><AlertTriangle size={18} /> {t('Failed')}</>}</button>
               )}
-              <button type="button" onClick={() => remove(p.key)} aria-label="Remove photo"
+              <button type="button" onClick={() => remove(p.key)} aria-label={t('Remove photo')}
                 className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center"><X size={14} /></button>
             </div>
           ))}
         </div>
       )}
       <p className="text-xs text-slate-500 mt-2">
-        {uploading ? `Uploading ${uploading} photo${uploading > 1 ? 's' : ''}…` : full ? 'Maximum 10 photos.' : 'Take photos of the installed product (photos are made smaller before upload).'}
+        {uploading ? (uploading === 1 ? t('Uploading 1 photo…') : t('Uploading {n} photos…', { n: uploading }))
+          : items.some((p) => p.status === 'offline') ? <span className="text-amber-700 font-semibold">{t('No internet: photos are saved on the phone and upload when you are back online.')}</span>
+          : full ? t('Maximum 10 photos.') : t('Take photos of the installed product (photos are made smaller before upload).')}
       </p>
     </div>
   )

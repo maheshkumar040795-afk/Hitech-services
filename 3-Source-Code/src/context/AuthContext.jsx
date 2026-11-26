@@ -28,10 +28,23 @@ export function AuthProvider({ children }) {
     if (!checked) return
     if (!uid) { setUser(null); setTechnician(null); setLoading(false); return }
     let cancelled = false
+    // No internet when the app opens (e.g. HT Jobs in a basement): use the profile saved at the last
+    // successful load instead of logging the person out.
+    const cacheKey = `ht_auth:${uid}`
+    const offlineErr = (e) => navigator.onLine === false || /Failed to fetch|NetworkError|Load failed|fetch failed|Network request failed/i.test(`${e?.message || ''} ${e?.details || ''}`)
+    const fromCache = () => {
+      let saved = null
+      try { saved = JSON.parse(localStorage.getItem(cacheKey) || 'null') } catch { /* ignore */ }
+      if (!saved?.profile) return false
+      setUser(saved.profile); setTechnician(saved.technician || null); setLoading(false)
+      return true
+    }
     ;(async () => {
       setLoading(true)
+      if (navigator.onLine === false && fromCache()) return   // phone says offline → open at once with the saved profile
       const { data: profile, error } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle()
       if (cancelled) return
+      if (error && offlineErr(error) && fromCache()) return
       if (error || !profile || !profile.is_active) {
         setAuthError(error ? errMsg(error) : 'Your login is not active. Contact the office.')
         await supabase.auth.signOut()
@@ -43,6 +56,7 @@ export function AuthProvider({ children }) {
         tech = data
       }
       if (cancelled) return
+      try { localStorage.setItem(cacheKey, JSON.stringify({ profile, technician: tech })) } catch { /* ignore */ }
       setUser(profile)
       setTechnician(tech)
       setLoading(false)
@@ -59,11 +73,12 @@ export function AuthProvider({ children }) {
   }, [])
 
   const logout = useCallback(async () => {
+    try { if (session?.user?.id) localStorage.removeItem(`ht_auth:${session.user.id}`) } catch { /* ignore */ }
     if (user?.role === 'TECHNICIAN') await supabase.rpc('tech_activity', { p_event: 'logout' }).then(() => {}, () => {})
     await supabase.auth.signOut()
     setUser(null)
     setTechnician(null)
-  }, [user?.role])
+  }, [user?.role, session?.user?.id])
 
   const value = {
     session, user, technician, loading: loading || session === undefined, authError,

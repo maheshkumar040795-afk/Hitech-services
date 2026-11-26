@@ -9,6 +9,7 @@ import { useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import IOSInstallSheet, { isIOS } from './IOSInstallSheet'
 import Logo from '../Logo'
+import { useLang } from '../../tech/i18n'
 
 export default function PWABanners() {
   const { isOnline, updateAvailable, installPrompt, isInstalled, promptInstall, applyUpdate } = usePWA()
@@ -19,11 +20,14 @@ export default function PWABanners() {
   const isTechApp = pathname === '/tech' || pathname.startsWith('/tech/')
   // The technician login screen has its own install button
   const onLoginScreen = pathname === '/login' || pathname === '/tech/login'
+  const { t: tt } = useLang()
+  const t = (s) => (isTechApp ? tt(s) : s)   // HT Jobs: Tamil / English · office: always English
 
   return (
     <>
       {/* Offline banner */}
-      {!isOnline && (
+      {/* HT Jobs shows its own offline notice (it keeps working offline) */}
+      {!isOnline && !isTechApp && (
         <div className="fixed top-0 left-0 right-0 z-[200] flex items-center justify-center gap-2
                         bg-amber-500 text-white text-xs font-semibold py-2 px-4 animate-slide-up">
           <WifiOff size={13} />
@@ -36,12 +40,12 @@ export default function PWABanners() {
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[200] flex items-center gap-3
                         bg-slate-900 text-white text-sm px-5 py-3 rounded-2xl shadow-2xl animate-slide-up">
           <RefreshCw size={15} className="text-brand-400" />
-          <span>A new version is available</span>
+          <span>{t('A new version is available')}</span>
           <button
             onClick={applyUpdate}
             className="ml-1 px-3 py-1 rounded-lg bg-brand-600 text-white text-xs font-semibold hover:bg-brand-500 transition-colors"
           >
-            Update now
+            {t('Update now')}
           </button>
         </div>
       )}
@@ -54,8 +58,8 @@ export default function PWABanners() {
           <div className="flex items-start gap-3">
             <Logo size={40} />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-slate-900">Install {isTechApp ? 'HT Jobs' : 'Hitech Ops'}</p>
-              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">Add to your home screen — opens like a normal app.</p>
+              <p className="text-sm font-semibold text-slate-900">{isTechApp ? t('Install HT Jobs') : 'Install Hitech Ops'}</p>
+              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{t('Add to your home screen — opens like a normal app.')}</p>
             </div>
             <button onClick={dismiss} className="text-slate-400 hover:text-slate-600 flex-shrink-0">
               <X size={15} />
@@ -63,10 +67,10 @@ export default function PWABanners() {
           </div>
           <div className="flex gap-2 mt-3">
             <button onClick={dismiss} className="btn-secondary flex-1 justify-center text-xs py-2">
-              Not now
+              {t('Not now')}
             </button>
             <button onClick={() => (installPrompt ? promptInstall() : setIosHelp(true))} className="btn-primary flex-1 justify-center text-xs py-2">
-              <Download size={13} /> Install
+              <Download size={13} /> {t('Install')}
             </button>
           </div>
         </div>

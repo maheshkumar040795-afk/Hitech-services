@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { PasswordConfirmProvider } from './components/PasswordConfirm'
+import { tr } from './tech/i18n'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { ToastProvider } from './context/ToastContext'
 import { CONFIG_MISSING } from './lib/supabase'
@@ -49,7 +50,7 @@ function OfficeRoute({ children, adminOnly = false }) {
 
 function TechRoute({ children }) {
   const { user, loading, isTech, logout } = useAuth()
-  if (loading) return <Splash text="Loading your jobs…" />
+  if (loading) return <Splash text={tr('Loading your jobs…')} />
   if (!user) return <Navigate to="/tech/login" replace />
   if (!isTech) {
     if (!TECH_ENTRY) return <Navigate to="/" replace />

@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Phone, MapPin, MessageCircle, ChevronRight, X, CheckCircle2, XCircle, Clock, RefreshCw, LogOut,
   User, Lock, Send, Search, RotateCcw, Pencil, KeyRound, Wifi, WifiOff, CalendarDays, ClipboardList, CalendarClock, Banknote, BellRing, ShoppingBag, Wrench,
-  Hammer,
+  Hammer, CloudOff, UploadCloud,
 } from 'lucide-react'
 import { supabase, rpc, errMsg } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -15,9 +15,11 @@ import WelcomeModal from '../components/WelcomeModal'
 import { usePushAlerts } from './usePushAlerts'
 import { useTechPresence } from '../hooks/usePresence'
 import IOSInstallSheet from '../components/ui/IOSInstallSheet'
-import PhotoPicker, { photoItems, photoUrls } from './PhotoPicker'
+import PhotoPicker, { photoItems, photoUrls, offlinePhotos } from './PhotoPicker'
+import { readCache, writeCache, isNetworkError, enqueue, sendItem, applyQueue, syncQueue, useOfflineQueue } from './offline'
 import DoneCalendar from './DoneCalendar'
 import { PHOTOS_ENABLED, PHOTOS_REQUIRED, photoThumb } from '../lib/photos'
+import { tr as t, useLang, LangSwitch, locale } from './i18n'
 
 const REASONS = [
   'Customer not available',
@@ -62,6 +64,19 @@ function Sheet({ title, onClose, children, tall = false }) {
   )
 }
 
+/** "What did you install / repair?" list from Rate Config — saved on the phone so it works without internet */
+const itemsQuery = (fn) => ({
+  queryKey: ['install-items', fn], staleTime: 10 * 60_000,
+  initialData: () => readCache(`items:${fn}`), initialDataUpdatedAt: 0,
+  queryFn: async () => {
+    const { data, error } = await supabase.rpc(fn)
+    if (error) { if (isNetworkError(error)) return readCache(`items:${fn}`) || []; return [] }   // server not updated yet → no picker
+    const list = (data || []).map((r) => (typeof r === 'string' ? r : r[fn])).filter(Boolean)
+    writeCache(`items:${fn}`, list)
+    return list
+  },
+})
+
 // ── Complete / not-complete forms ─────────────────────────────────────────────
 function CompleteSheet({ job, onClose, onDone }) {
   const { toast } = useToast()
@@ -71,14 +86,7 @@ function CompleteSheet({ job, onClose, onDone }) {
   // what was installed / repaired — list comes from Rate Config (names only)
   const repair = job.job_type === 'REPAIR'
   const fn = repair ? 'tech_repair_items' : 'tech_install_items'
-  const { data: items = [], isLoading: itemsLoading } = useQuery({
-    queryKey: ['install-items', fn], staleTime: 10 * 60_000,
-    queryFn: async () => {
-      const { data, error } = await supabase.rpc(fn)
-      if (error) return []   // server not updated yet → no picker
-      return (data || []).map((r) => (typeof r === 'string' ? r : r[fn])).filter(Boolean)
-    },
-  })
+  const { data: items = [], isLoading: itemsLoading } = useQuery(itemsQuery(fn))
   const norm = (x) => (x || '').trim().toLowerCase()
   const [item, setItem] = useState(job.installed_item || '')
   useEffect(() => {
@@ -92,45 +100,48 @@ function CompleteSheet({ job, onClose, onDone }) {
   const [busy, setBusy] = useState(false)
   const submit = async (e) => {
     e.preventDefault()
-    if (items.length && !item) return toast(repair ? 'Select what you repaired' : 'Select what you installed', 'error')
-    if (!pay) return toast('Select Collect from customer or Paid on Amazon', 'error')
+    if (items.length && !item) return toast(t(repair ? 'Select what you repaired' : 'Select what you installed'), 'error')
+    if (!pay) return toast(t('Select Collect from customer or Paid on Amazon'), 'error')
     const amazon = pay === 'AMAZON' && !(toCollect > 0)
     const v = amazon ? 0 : parseFloat(amount)
-    if (!amazon && (amount === '' || isNaN(v) || v <= 0)) return toast('Enter the amount collected from the customer', 'error')
+    if (!amazon && (amount === '' || isNaN(v) || v <= 0)) return toast(t('Enter the amount collected from the customer'), 'error')
     const urls = photoUrls(photos)
+    const waiting = offlinePhotos(photos)   // taken without internet, upload later
     if (PHOTOS_ENABLED) {
-      if (photos.some((p) => p.status === 'uploading')) return toast('Please wait, photos are still uploading', 'error')
-      if (photos.some((p) => p.status === 'error')) return toast('A photo did not upload. Tap it to retry, or remove it (✕).', 'error')
-      if (PHOTOS_REQUIRED && !urls.length) return toast('Add at least 1 photo of the installation', 'error')
+      if (photos.some((p) => p.status === 'uploading')) return toast(t('Please wait, photos are still uploading'), 'error')
+      if (photos.some((p) => p.status === 'error')) return toast(t('A photo did not upload. Tap it to retry, or remove it (✕).'), 'error')
+      if (PHOTOS_REQUIRED && !urls.length && !waiting.length) return toast(t('Add at least 1 photo of the installation'), 'error')
+    }
+    const mode = amazon ? 'AMAZON' : 'CASH'   // CASH = collected from customer
+    const update = {
+      kind: 'complete', techId: technician?.id, jobId: job.id, orderId: job.order_id,
+      args: { p_order: job.id, p_status: 'COMPLETED', p_amount: v, p_note: note || null, p_payment_mode: mode, ...(item ? { p_installed_item: item } : {}) },
+      photoUrls: urls, savedPhotos: job.photos || [], blobs: waiting,
+      patch: { status: 'COMPLETED', payment_mode: mode, cod_amount: v, ...(item ? { installed_item: item } : {}) },
+    }
+    const doneMsg = amazon ? t('Job completed · paid on Amazon') : t('Job completed · {amt} collected from customer', { amt: fmtMoney(v) })
+    const saveOnPhone = async () => {
+      await enqueue(update)
+      navigator.vibrate?.(60)
+      toast(`${doneMsg} · ${t('Saved on phone · will send when internet is back')}`, 'success')
+      onDone()
     }
     setBusy(true)
     try {
-      // photos first: the job is never completed without its photos
-      const saved = job.photos || []
-      if (PHOTOS_ENABLED && (urls.length !== saved.length || urls.some((u, i) => u !== saved[i]))) {
-        try { await rpc('tech_save_photos', { p_order: job.id, p_urls: urls }) }
-        catch (err) {
-          if (/tech_save_photos|schema cache|Could not find the function/i.test(err?.message || '')) throw new Error('Photos are not set up on the server yet. Please call the office.')
-          throw err
-        }
-      }
-      const base = { p_order: job.id, p_status: 'COMPLETED', p_amount: v, p_note: note || null }
-      const withMode = { ...base, p_payment_mode: amazon ? 'AMAZON' : 'CASH' }   // CASH = collected from customer
-      const old = (err) => /p_installed_item|p_payment_mode|schema cache|Could not find the function/i.test(err?.message || '')
-      try { await rpc('tech_update_job', item ? { ...withMode, p_installed_item: item } : withMode) }
-      catch (err) {   // server not updated yet → save what it understands
-        if (!old(err)) throw err
-        try { await rpc('tech_update_job', withMode) }
-        catch (err2) { if (old(err2)) await rpc('tech_update_job', base); else throw err2 }
-      }
+      if (navigator.onLine === false || waiting.length) return await saveOnPhone()   // no internet → the phone keeps it
+      await sendItem(update, { techCode: technician?.tech_code })   // photos first, then the job: never completed without its photos
       navigator.vibrate?.(60)
-      toast(amazon ? 'Job completed · paid on Amazon' : `Job completed · ${fmtMoney(v)} collected from customer`, 'success')
+      toast(doneMsg, 'success')
       onDone()
-    } catch (err) { toast(errMsg(err), 'error') } finally { setBusy(false) }
+    } catch (err) {
+      if (isNetworkError(err)) await saveOnPhone()
+      else if (/tech_save_photos|schema cache|Could not find the function/i.test(err?.message || '')) toast(t('Photos are not set up on the server yet. Please call the office.'), 'error')
+      else toast(errMsg(err), 'error')
+    } finally { setBusy(false) }
   }
   const choice = (on, active) => `rounded-2xl border-2 font-bold transition ${active ? on : 'border-slate-200 text-slate-600 active:bg-slate-50'}`
   return (
-    <Sheet title={repair ? 'Mark repair completed' : 'Mark job completed'} onClose={onClose}>
+    <Sheet title={t(repair ? 'Mark repair completed' : 'Mark job completed')} onClose={onClose}>
       <form onSubmit={submit} className="p-5 space-y-5">
         <div className="text-sm text-slate-600"><b className="text-slate-900">{job.customer_name}</b> · {job.service}</div>
 
@@ -138,15 +149,15 @@ function CompleteSheet({ job, onClose, onDone }) {
           <div className="rounded-2xl border-2 border-red-300 bg-red-50 p-4 flex items-start gap-3">
             <Banknote size={28} className="text-red-600 flex-shrink-0" />
             <div>
-              <p className="text-base font-bold text-red-800">You have to collect <span className="text-2xl">{fmtMoney(toCollect)}</span> from the customer</p>
-              <p className="text-xs text-red-700 mt-0.5">This order is not paid on Amazon. Collect the amount (cash or UPI) before you leave.</p>
+              <p className="text-base font-bold text-red-800">{t('collect.before')} <span className="text-2xl">{fmtMoney(toCollect)}</span> {t('collect.after')}</p>
+              <p className="text-xs text-red-700 mt-0.5">{t('This order is not paid on Amazon. Collect the amount (cash or UPI) before you leave.')}</p>
             </div>
           </div>
         )}
 
         {(itemsLoading || items.length > 0) && (
           <div>
-            <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 mb-2"><Wrench size={15} /> 1. What did you {repair ? 'repair' : 'install'}?</label>
+            <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 mb-2"><Wrench size={15} /> {t(repair ? '1. What did you repair?' : '1. What did you install?')}</label>
             {itemsLoading ? <div className="h-12 rounded-2xl bg-slate-100 animate-pulse" /> : (
               <div className="space-y-1.5 max-h-64 overflow-y-auto pr-0.5">
                 {items.map((i) => (
@@ -163,22 +174,22 @@ function CompleteSheet({ job, onClose, onDone }) {
         )}
 
         <div>
-          <label className="block text-sm font-semibold text-slate-700 mb-2">{items.length ? '2. ' : ''}Payment</label>
+          <label className="block text-sm font-semibold text-slate-700 mb-2">{t(items.length ? '2. Payment' : 'Payment')}</label>
           <div className={`grid gap-2 ${toCollect > 0 ? 'grid-cols-1' : 'grid-cols-2'}`}>
             <button type="button" onClick={() => setPay('COLLECT')}
               className={`py-3.5 px-2 flex flex-col items-center gap-1 text-sm ${choice('border-emerald-500 bg-emerald-50 text-emerald-700', pay === 'COLLECT')}`}>
-              <Banknote size={22} /> Collect from customer</button>
+              <Banknote size={22} /> {t('Collect from customer')}</button>
             {!(toCollect > 0) && <button type="button" onClick={() => setPay('AMAZON')}
               className={`py-3.5 px-2 flex flex-col items-center gap-1 text-sm ${choice('border-amber-500 bg-amber-50 text-amber-800', pay === 'AMAZON')}`}>
-              <ShoppingBag size={22} /> Paid on Amazon</button>}
+              <ShoppingBag size={22} /> {t('Paid on Amazon')}</button>}
           </div>
-          {pay === 'AMAZON' && <p className="text-xs text-amber-700 mt-1.5">Customer already paid on Amazon — nothing to collect (₹0).</p>}
+          {pay === 'AMAZON' && <p className="text-xs text-amber-700 mt-1.5">{t('Customer already paid on Amazon — nothing to collect (₹0).')}</p>}
           {pay === 'COLLECT' && (
             <div className="mt-3 space-y-3 rounded-2xl bg-slate-50 p-3">
-              <p className="text-xs text-slate-600">Amount you received from the customer (cash or UPI). It is deducted from your pay for this job.</p>
+              <p className="text-xs text-slate-600">{t('Amount you received from the customer (cash or UPI). It is deducted from your pay for this job.')}</p>
               <div className="flex items-center rounded-2xl border-2 border-slate-200 bg-white focus-within:border-emerald-500 overflow-hidden">
                 <span className="pl-4 text-2xl font-bold text-slate-400">₹</span>
-                <input type="number" inputMode="decimal" min="0" step="0.01" placeholder="Amount collected" autoFocus
+                <input type="number" inputMode="decimal" min="0" step="0.01" placeholder={t('Amount collected')} autoFocus
                   className="flex-1 min-w-0 py-3.5 px-3 text-2xl font-bold outline-none bg-transparent placeholder:text-base placeholder:font-medium" value={amount} onChange={(e) => setAmount(e.target.value)} />
               </div>
             </div>
@@ -187,12 +198,12 @@ function CompleteSheet({ job, onClose, onDone }) {
         {PHOTOS_ENABLED && <PhotoPicker items={photos} setItems={setPhotos} orderId={job.order_id} techCode={technician?.tech_code} />}
 
         <div>
-          <label className="block text-sm font-semibold text-slate-700 mb-2">Note <span className="font-normal text-slate-400">(optional)</span></label>
+          <label className="block text-sm font-semibold text-slate-700 mb-2">{t('Note')} <span className="font-normal text-slate-400">{t('(optional)')}</span></label>
           <textarea rows={2} className="w-full rounded-2xl border-2 border-slate-200 focus:border-emerald-500 outline-none p-3 text-base"
-            placeholder="e.g. Installed with extra pipe 2 m" value={note} onChange={(e) => setNote(e.target.value)} />
+            placeholder={t('e.g. Installed with extra pipe 2 m')} value={note} onChange={(e) => setNote(e.target.value)} />
         </div>
         <button disabled={busy || photos.some((p) => p.status === 'uploading')} className="w-full py-4 rounded-2xl bg-emerald-600 active:bg-emerald-700 text-white text-lg font-bold flex items-center justify-center gap-2 disabled:opacity-60">
-          <CheckCircle2 size={22} /> {busy ? 'Saving…' : photos.some((p) => p.status === 'uploading') ? 'Uploading photos…' : 'Submit — Job Completed'}
+          <CheckCircle2 size={22} /> {busy ? t('Saving…') : photos.some((p) => p.status === 'uploading') ? t('Uploading photos…') : t('Submit — Job Completed')}
         </button>
       </form>
     </Sheet>
@@ -201,34 +212,39 @@ function CompleteSheet({ job, onClose, onDone }) {
 
 function NotDoneSheet({ job, onClose, onDone }) {
   const { toast } = useToast()
+  const { technician } = useAuth()
   const [reason, setReason] = useState('')
   const [other, setOther] = useState('')
   const [busy, setBusy] = useState(false)
   const text = reason === 'Other' ? other.trim() : reason
   const submit = async () => {
-    if (!text) return toast('Select or type a reason', 'error')
+    if (!text) return toast(t('Select or type a reason'), 'error')
+    const update = { kind: 'notdone', techId: technician?.id, jobId: job.id, orderId: job.order_id,
+      args: { p_order: job.id, p_status: 'REJECTED', p_amount: null, p_note: text }, patch: { status: 'REJECTED', comments: text } }
+    const saveOnPhone = async () => { await enqueue(update); toast(`${t('Reported to office')} · ${t('Saved on phone · will send when internet is back')}`, 'success'); onDone() }
     setBusy(true)
     try {
-      await rpc('tech_update_job', { p_order: job.id, p_status: 'REJECTED', p_amount: null, p_note: text })
-      toast('Reported to office', 'success')
+      if (navigator.onLine === false) return await saveOnPhone()
+      await sendItem(update)
+      toast(t('Reported to office'), 'success')
       onDone()
-    } catch (err) { toast(errMsg(err), 'error') } finally { setBusy(false) }
+    } catch (err) { if (isNetworkError(err)) await saveOnPhone(); else toast(errMsg(err), 'error') } finally { setBusy(false) }
   }
   return (
-    <Sheet title="Can't complete this job" onClose={onClose}>
+    <Sheet title={t("Can't complete this job")} onClose={onClose}>
       <div className="p-5 space-y-3">
-        <p className="text-sm text-slate-500">Why? The office will see this reason.</p>
+        <p className="text-sm text-slate-500">{t('Why? The office will see this reason.')}</p>
         <div className="space-y-2">
           {[...REASONS, 'Other'].map((r) => (
             <button key={r} type="button" onClick={() => setReason(r)}
-              className={`w-full text-left px-4 py-3.5 rounded-2xl border-2 text-[15px] font-medium ${reason === r ? 'border-red-500 bg-red-50 text-red-700' : 'border-slate-200 text-slate-700 active:bg-slate-50'}`}>{r}</button>
+              className={`w-full text-left px-4 py-3.5 rounded-2xl border-2 text-[15px] font-medium ${reason === r ? 'border-red-500 bg-red-50 text-red-700' : 'border-slate-200 text-slate-700 active:bg-slate-50'}`}>{t(r)}</button>
           ))}
         </div>
         {reason === 'Other' && (
-          <textarea autoFocus rows={2} className="w-full rounded-2xl border-2 border-slate-200 focus:border-red-500 outline-none p-3 text-base" placeholder="Type the reason" value={other} onChange={(e) => setOther(e.target.value)} />
+          <textarea autoFocus rows={2} className="w-full rounded-2xl border-2 border-slate-200 focus:border-red-500 outline-none p-3 text-base" placeholder={t('Type the reason')} value={other} onChange={(e) => setOther(e.target.value)} />
         )}
         <button onClick={submit} disabled={busy || !text} className="w-full py-4 rounded-2xl bg-red-600 active:bg-red-700 text-white text-lg font-bold disabled:opacity-40">
-          {busy ? 'Sending…' : 'Submit reason'}
+          {busy ? t('Sending…') : t('Submit reason')}
         </button>
       </div>
     </Sheet>
@@ -256,6 +272,7 @@ function JobDetail({ job, onClose, refresh }) {
 
   const addNote = async () => {
     if (!note.trim()) return
+    if (navigator.onLine === false) return toast(t('Notes need internet'), 'error')
     setBusy(true)
     const { error } = await supabase.from('comment_logs').insert({ order_id: job.id, user_id: user.id, comment: note.trim() })
     setBusy(false)
@@ -263,8 +280,9 @@ function JobDetail({ job, onClose, refresh }) {
     setNote(''); qc.invalidateQueries({ queryKey: ['tech-notes', job.id] }); refresh()
   }
   const reopen = async () => {
-    if (!confirm(job.rescheduled_date ? `Re-open this job? It goes back to Rescheduled (${fmtDate(job.rescheduled_date)}).` : 'Re-open this job as Pending?')) return
-    try { await rpc('tech_update_job', { p_order: job.id, p_status: 'PENDING' }); toast('Job re-opened', 'success'); refresh() }
+    if (navigator.onLine === false) return toast(t('This needs internet'), 'error')
+    if (!confirm(job.rescheduled_date ? t('Re-open this job? It goes back to Rescheduled ({d}).', { d: fmtDate(job.rescheduled_date) }) : t('Re-open this job as Pending?'))) return
+    try { await rpc('tech_update_job', { p_order: job.id, p_status: 'PENDING' }); toast(t('Job re-opened'), 'success'); refresh() }
     catch (e) { toast(errMsg(e), 'error') }
   }
   const done = () => { setAction(null); refresh(); onClose() }
@@ -284,27 +302,27 @@ function JobDetail({ job, onClose, refresh }) {
 
           <div className="grid grid-cols-3 gap-2">
             <a href={tel || undefined} className={`flex flex-col items-center gap-1 py-3 rounded-2xl ${tel ? 'bg-brand-50 text-brand-700 active:bg-brand-100' : 'bg-slate-50 text-slate-300 pointer-events-none'}`}>
-              <Phone size={22} /><span className="text-xs font-semibold">Call</span></a>
+              <Phone size={22} /><span className="text-xs font-semibold">{t('Call')}</span></a>
             <a href={mapsUrl(job)} target="_blank" rel="noreferrer" className="flex flex-col items-center gap-1 py-3 rounded-2xl bg-emerald-50 text-emerald-700 active:bg-emerald-100">
-              <MapPin size={22} /><span className="text-xs font-semibold">{job.location_url ? 'Location' : 'Map'}</span></a>
+              <MapPin size={22} /><span className="text-xs font-semibold">{t(job.location_url ? 'Location' : 'Map')}</span></a>
             <a href={wa || undefined} target="_blank" rel="noreferrer" className={`flex flex-col items-center gap-1 py-3 rounded-2xl ${wa ? 'bg-green-50 text-green-700 active:bg-green-100' : 'bg-slate-50 text-slate-300 pointer-events-none'}`}>
               <MessageCircle size={22} /><span className="text-xs font-semibold">WhatsApp</span></a>
           </div>
 
           <div className="rounded-2xl border border-slate-200 divide-y divide-slate-100">
             {[
-              ...(job.job_type === 'REPAIR' ? [['Job', 'Repair']] : []),
-              ['Service', [job.service, job.brand].filter(Boolean).join(' · ') || '—'],
-              ...(job.product_type ? [['Product type', job.product_type]] : []),
-              ...(job.installed_item ? [['Installed', job.installed_item]] : []),
-              ...(isOpen(job) && Number(job.collect_amount) > 0 ? [['Cash collect', <b key="c" className="text-red-700">{fmtMoney(job.collect_amount)} from customer</b>]] : []),
-              ['Phone', job.phone_no || '—'],
-              ['Address', [job.address, job.location].filter(Boolean).join(', ') || '—'],
-              ['Pin code', job.pin_code || '—'],
-              ['Order date', fmtDate(job.order_date, { day: 'numeric', month: 'short', year: 'numeric' })],
-              ...(job.rescheduled_date ? [['Rescheduled to', fmtDate(job.rescheduled_date, { day: 'numeric', month: 'short', year: 'numeric' })]] : []),
-              ...(!isOpen(job) ? [[job.status === 'COMPLETED' ? 'Completed on' : 'Closed', fmtDateTime(job.closed_at)]] : []),
-              ...(job.status === 'COMPLETED' ? [['Payment', (job.payment_mode === 'AMAZON' ? 'Paid on Amazon' : `${fmtMoney(job.cod_amount)} collected from customer`)]] : []),
+              ...(job.job_type === 'REPAIR' ? [[t('Job'), t('Repair')]] : []),
+              [t('Service'), [job.service, job.brand].filter(Boolean).join(' · ') || '—'],
+              ...(job.product_type ? [[t('Product type'), job.product_type]] : []),
+              ...(job.installed_item ? [[t('Installed'), job.installed_item]] : []),
+              ...(isOpen(job) && Number(job.collect_amount) > 0 ? [[t('Cash collect'), <b key="c" className="text-red-700">{t('{amt} from customer', { amt: fmtMoney(job.collect_amount) })}</b>]] : []),
+              [t('Phone'), job.phone_no || '—'],
+              [t('Address'), [job.address, job.location].filter(Boolean).join(', ') || '—'],
+              [t('Pin code'), job.pin_code || '—'],
+              [t('Order date'), fmtDate(job.order_date, { day: 'numeric', month: 'short', year: 'numeric' })],
+              ...(job.rescheduled_date ? [[t('Rescheduled to'), fmtDate(job.rescheduled_date, { day: 'numeric', month: 'short', year: 'numeric' })]] : []),
+              ...(!isOpen(job) ? [[t(job.status === 'COMPLETED' ? 'Completed on' : 'Closed'), fmtDateTime(job.closed_at)]] : []),
+              ...(job.status === 'COMPLETED' ? [[t('Payment'), (job.payment_mode === 'AMAZON' ? t('Paid on Amazon') : t('{amt} collected from customer', { amt: fmtMoney(job.cod_amount) }))]] : []),
             ].map(([l, v]) => (
               <div key={l} className="flex gap-3 px-4 py-3"><span className="text-xs text-slate-400 w-24 flex-shrink-0 pt-0.5">{l}</span><span className="text-[15px] text-slate-800 font-medium break-words">{v}</span></div>
             ))}
@@ -319,23 +337,23 @@ function JobDetail({ job, onClose, refresh }) {
           {isOpen(job) ? (
             <div className="space-y-2">
               <button onClick={() => setAction('complete')} className="w-full py-4 rounded-2xl bg-emerald-600 active:bg-emerald-700 text-white text-lg font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20">
-                <CheckCircle2 size={22} /> Mark Completed</button>
+                <CheckCircle2 size={22} /> {t('Mark Completed')}</button>
               <button onClick={() => setAction('notdone')} className="w-full py-3.5 rounded-2xl border-2 border-red-200 text-red-600 active:bg-red-50 text-base font-semibold flex items-center justify-center gap-2">
-                <XCircle size={20} /> Can't Complete</button>
+                <XCircle size={20} /> {t("Can't Complete")}</button>
             </div>
           ) : locked ? (
-            <div className="flex items-center gap-2 p-4 rounded-2xl bg-slate-50 text-sm text-slate-500"><Lock size={16} /> Closed on an earlier day. Call the office to change it.</div>
+            <div className="flex items-center gap-2 p-4 rounded-2xl bg-slate-50 text-sm text-slate-500"><Lock size={16} /> {t('Closed on an earlier day. Call the office to change it.')}</div>
           ) : (
             <div className="grid grid-cols-2 gap-2">
-              {job.status === 'COMPLETED' && <button onClick={() => setAction('complete')} className="py-3 rounded-2xl border-2 border-slate-200 text-slate-700 font-semibold flex items-center justify-center gap-2 active:bg-slate-50"><Pencil size={16} /> Edit details</button>}
-              <button onClick={reopen} className={`py-3 rounded-2xl border-2 border-slate-200 text-slate-700 font-semibold flex items-center justify-center gap-2 active:bg-slate-50 ${job.status !== 'COMPLETED' ? 'col-span-2' : ''}`}><RotateCcw size={16} /> Re-open</button>
+              {job.status === 'COMPLETED' && <button onClick={() => setAction('complete')} className="py-3 rounded-2xl border-2 border-slate-200 text-slate-700 font-semibold flex items-center justify-center gap-2 active:bg-slate-50"><Pencil size={16} /> {t('Edit details')}</button>}
+              <button onClick={reopen} className={`py-3 rounded-2xl border-2 border-slate-200 text-slate-700 font-semibold flex items-center justify-center gap-2 active:bg-slate-50 ${job.status !== 'COMPLETED' ? 'col-span-2' : ''}`}><RotateCcw size={16} /> {t('Re-open')}</button>
             </div>
           )}
 
           <div>
-            <p className="text-sm font-bold text-slate-700 mb-2">Notes</p>
+            <p className="text-sm font-bold text-slate-700 mb-2">{t('Notes')}</p>
             <div className="flex gap-2 mb-3">
-              <input className="flex-1 rounded-2xl border-2 border-slate-200 focus:border-brand-500 outline-none px-4 py-3 text-base" placeholder="Add a note for the office…"
+              <input className="flex-1 rounded-2xl border-2 border-slate-200 focus:border-brand-500 outline-none px-4 py-3 text-base" placeholder={t('Add a note for the office…')}
                 value={note} onChange={(e) => setNote(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addNote()} />
               <button onClick={addNote} disabled={busy || !note.trim()} className="w-12 rounded-2xl bg-brand-600 text-white flex items-center justify-center disabled:opacity-40"><Send size={18} /></button>
             </div>
@@ -343,10 +361,10 @@ function JobDetail({ job, onClose, refresh }) {
               {notes.map((n) => (
                 <div key={n.id} className="rounded-2xl bg-slate-50 px-4 py-3">
                   <p className="text-[15px] text-slate-800">{n.comment}</p>
-                  <p className="text-[11px] text-slate-400 mt-1">{n.user?.role === 'TECHNICIAN' ? 'You' : `${n.user?.name || 'Office'} (office)`} · {fmtDateTime(n.created_at)}</p>
+                  <p className="text-[11px] text-slate-400 mt-1">{n.user?.role === 'TECHNICIAN' ? t('You') : `${n.user?.name || t('Office')} ${t('(office)')}`} · {fmtDateTime(n.created_at)}</p>
                 </div>
               ))}
-              {!notes.length && <p className="text-sm text-slate-400">No notes yet</p>}
+              {!notes.length && <p className="text-sm text-slate-400">{t('No notes yet')}</p>}
             </div>
           </div>
         </div>
@@ -365,7 +383,7 @@ function StatusPill({ status }) {
     REJECTED: ['Not done', 'bg-red-100 text-red-700', XCircle],
   }[status]
   const Icon = m[2]
-  return <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${m[1]}`}><Icon size={13} /> {m[0]}</span>
+  return <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${m[1]}`}><Icon size={13} /> {t(m[0])}</span>
 }
 
 /** Done tab: job is closed — no customer details, cannot be opened. Only date, installed item and cash collected. */
@@ -374,13 +392,14 @@ function DoneCard({ job }) {
   return (
     <div className="bg-white rounded-3xl border border-slate-200/70 shadow-soft px-4 py-3.5 space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <span className="flex items-center gap-1.5 text-sm font-bold text-emerald-700"><CheckCircle2 size={16} /> {job.job_type === 'REPAIR' ? 'Repair completed' : 'Completed'}</span>
-        <span className="text-xs font-semibold text-slate-500">{fmtDayIST(job.closed_at, { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+        <span className="flex items-center gap-1.5 text-sm font-bold text-emerald-700"><CheckCircle2 size={16} /> {t(job.job_type === 'REPAIR' ? 'Repair completed' : 'Completed')}</span>
+        {job._queued ? <span className="text-[11px] font-bold text-sky-700 flex items-center gap-1"><UploadCloud size={13} /> {t('Waiting to send')}</span>
+          : <span className="text-xs font-semibold text-slate-500">{fmtDayIST(job.closed_at, { day: 'numeric', month: 'short', year: 'numeric' })}</span>}
       </div>
       <div className="flex items-start gap-2 text-[15px] text-slate-800"><Wrench size={15} className="text-slate-400 mt-1 flex-shrink-0" /><span className="font-semibold">{job.installed_item || job.service || '—'}</span></div>
       <div className="flex items-center gap-2 text-sm"><Banknote size={15} className="text-slate-400 flex-shrink-0" />
-        {amazon ? <span className="font-semibold text-amber-700">Paid on Amazon · nothing collected</span>
-          : <span><b className="text-slate-900">{fmtMoney(job.cod_amount)}</b> <span className="text-slate-500">cash collected</span></span>}</div>
+        {amazon ? <span className="font-semibold text-amber-700">{t('Paid on Amazon · nothing collected')}</span>
+          : <span><b className="text-slate-900">{fmtMoney(job.cod_amount)}</b> <span className="text-slate-500">{t('cash collected')}</span></span>}</div>
       {job.photos?.length > 0 && (
         <div className="flex gap-1.5 overflow-x-auto pt-0.5">
           {job.photos.map((u) => <a key={u} href={u} target="_blank" rel="noreferrer" className="w-12 h-12 flex-shrink-0 rounded-lg overflow-hidden bg-slate-100"><img src={photoThumb(u)} alt="" loading="lazy" className="w-full h-full object-cover" /></a>)}
@@ -398,11 +417,12 @@ function JobCard({ job, onOpen, isNew }) {
       <button onClick={onOpen} className="w-full text-left px-4 pt-4 pb-3 active:bg-slate-50">
         <div className="flex items-center justify-between gap-2 mb-1.5">
           <div className="flex items-center gap-2">
-            {isNew && <span className="px-2 py-0.5 rounded-full text-white text-[10px] font-bold shadow-glow" style={{ background: 'var(--grad-brand)' }}>NEW</span>}
-            {job.job_type === 'REPAIR' && <span className="px-2 py-0.5 rounded-full bg-orange-500 text-white text-[10px] font-bold flex items-center gap-0.5"><Hammer size={10} /> REPAIR</span>}
+            {isNew && <span className="px-2 py-0.5 rounded-full text-white text-[10px] font-bold shadow-glow" style={{ background: 'var(--grad-brand)' }}>{t('NEW')}</span>}
+            {job.job_type === 'REPAIR' && <span className="px-2 py-0.5 rounded-full bg-orange-500 text-white text-[10px] font-bold flex items-center gap-0.5"><Hammer size={10} /> {t('REPAIR')}</span>}
             {isOpen(job)
-              ? <span className={`text-xs font-semibold ${overdue ? 'text-red-600' : job.status === 'RESCHEDULED' ? 'text-sky-700' : 'text-slate-400'}`}>{job.status === 'RESCHEDULED' ? <CalendarClock size={12} className="inline -mt-0.5" /> : <CalendarDays size={12} className="inline -mt-0.5" />} {job.status === 'RESCHEDULED' ? 'Rescheduled · ' : ''}{fmtDate(visitDate(job), { day: 'numeric', month: 'short' })}{overdue ? ' · overdue' : ''}</span>
+              ? <span className={`text-xs font-semibold ${overdue ? 'text-red-600' : job.status === 'RESCHEDULED' ? 'text-sky-700' : 'text-slate-400'}`}>{job.status === 'RESCHEDULED' ? <CalendarClock size={12} className="inline -mt-0.5" /> : <CalendarDays size={12} className="inline -mt-0.5" />} {job.status === 'RESCHEDULED' ? t('Rescheduled · ') : ''}{fmtDate(visitDate(job), { day: 'numeric', month: 'short' })}{overdue ? t(' · overdue') : ''}</span>
               : <StatusPill status={job.status} />}
+            {job._queued && <span className="text-[10px] font-bold text-sky-700 flex items-center gap-0.5"><UploadCloud size={11} /> {t('Waiting to send')}</span>}
           </div>
           <span className="text-[10px] text-slate-400 font-mono truncate">{job.order_id}</span>
         </div>
@@ -411,8 +431,8 @@ function JobCard({ job, onOpen, isNew }) {
             <p className="text-[17px] font-bold text-slate-900 truncate">{job.customer_name}</p>
             <p className="text-sm text-slate-600 truncate">{[job.service, job.brand].filter(Boolean).join(' · ')}</p>
             <p className="text-sm text-slate-500 truncate mt-0.5"><MapPin size={12} className="inline -mt-0.5" /> {[job.location, job.pin_code].filter(Boolean).join(' · ') || '—'}</p>
-            {isOpen(job) && Number(job.collect_amount) > 0 && <p className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full bg-red-50 text-red-700 text-xs font-bold"><Banknote size={12} /> Collect {fmtMoney(job.collect_amount)}</p>}
-            {job.status === 'COMPLETED' && <p className="text-sm font-bold text-emerald-700 mt-1">{job.payment_mode === 'AMAZON' ? 'Paid on Amazon' : <>{fmtMoney(job.cod_amount)} collected from customer</>} <span className="font-medium text-slate-400">· {fmtDayIST(job.closed_at, { day: 'numeric', month: 'short' })}</span></p>}
+            {isOpen(job) && Number(job.collect_amount) > 0 && <p className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full bg-red-50 text-red-700 text-xs font-bold"><Banknote size={12} /> {t('Collect {amt}', { amt: fmtMoney(job.collect_amount) })}</p>}
+            {job.status === 'COMPLETED' && <p className="text-sm font-bold text-emerald-700 mt-1">{job.payment_mode === 'AMAZON' ? t('Paid on Amazon') : t('{amt} collected from customer', { amt: fmtMoney(job.cod_amount) })} <span className="font-medium text-slate-400">· {fmtDayIST(job.closed_at, { day: 'numeric', month: 'short' })}</span></p>}
             {job.status === 'COMPLETED' && job.installed_item && <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1"><Wrench size={11} /> {job.installed_item}</p>}
           </div>
           <ChevronRight size={20} className="text-slate-300 mt-2 flex-shrink-0" />
@@ -420,8 +440,8 @@ function JobCard({ job, onOpen, isNew }) {
       </button>
       {isOpen(job) && (
         <div className="grid grid-cols-2 border-t border-slate-100">
-          <a href={tel || undefined} className={`py-3 flex items-center justify-center gap-2 text-sm font-semibold border-r border-slate-100 ${tel ? 'text-brand-700 active:bg-brand-50' : 'text-slate-300 pointer-events-none'}`}><Phone size={16} /> Call</a>
-          <a href={mapsUrl(job)} target="_blank" rel="noreferrer" className="py-3 flex items-center justify-center gap-2 text-sm font-semibold text-emerald-700 active:bg-emerald-50"><MapPin size={16} /> Map</a>
+          <a href={tel || undefined} className={`py-3 flex items-center justify-center gap-2 text-sm font-semibold border-r border-slate-100 ${tel ? 'text-brand-700 active:bg-brand-50' : 'text-slate-300 pointer-events-none'}`}><Phone size={16} /> {t('Call')}</a>
+          <a href={mapsUrl(job)} target="_blank" rel="noreferrer" className="py-3 flex items-center justify-center gap-2 text-sm font-semibold text-emerald-700 active:bg-emerald-50"><MapPin size={16} /> {t('Map')}</a>
         </div>
       )}
     </div>
@@ -435,29 +455,32 @@ function AccountSheet({ onClose }) {
   const [busy, setBusy] = useState(false)
   const changePin = async (e) => {
     e.preventDefault()
-    if (pin.length < 6) return toast('PIN must be at least 6 digits', 'error')
+    if (pin.length < 6) return toast(t('PIN must be at least 6 digits'), 'error')
     setBusy(true)
     const { error } = await supabase.auth.updateUser({ password: pin })
     setBusy(false)
     if (error) return toast(errMsg(error), 'error')
-    setPin(''); toast('PIN changed', 'success')
+    setPin(''); toast(t('PIN changed'), 'success')
   }
   return (
-    <Sheet title="My account" onClose={onClose}>
+    <Sheet title={t('My account')} onClose={onClose}>
       <div className="p-5 space-y-5">
         <div className="flex items-center gap-3">
           <div className="w-14 h-14 rounded-2xl bg-brand-100 text-brand-700 font-bold text-xl flex items-center justify-center">{user?.name?.[0]}</div>
-          <div><p className="font-bold text-slate-900 text-lg">{user?.name}</p><p className="text-sm text-slate-500">+91 {user?.login}{technician?.city ? ` · ${technician.city}` : ''}</p>{technician?.tech_code && <p className="text-xs font-mono font-semibold text-brand-700 mt-0.5">Technician ID: {technician.tech_code}</p>}</div>
+          <div><p className="font-bold text-slate-900 text-lg">{user?.name}</p><p className="text-sm text-slate-500">+91 {user?.login}{technician?.city ? ` · ${technician.city}` : ''}</p>{technician?.tech_code && <p className="text-xs font-mono font-semibold text-brand-700 mt-0.5">{t('Technician ID: {c}', { c: technician.tech_code })}</p>}</div>
+        </div>
+        <div className="flex items-center justify-between rounded-2xl border-2 border-slate-200 px-4 py-3">
+          <span className="text-sm font-semibold text-slate-700">{t('Language')} / Language</span><LangSwitch />
         </div>
         <form onSubmit={changePin} className="space-y-2">
-          <label className="block text-sm font-semibold text-slate-700">Change PIN</label>
+          <label className="block text-sm font-semibold text-slate-700">{t('Change PIN')}</label>
           <div className="flex gap-2">
-            <input type="password" inputMode="numeric" placeholder="New PIN (6+ digits)" className="flex-1 rounded-2xl border-2 border-slate-200 focus:border-brand-500 outline-none px-4 py-3 text-base tracking-widest"
+            <input type="password" inputMode="numeric" placeholder={t('New PIN (6+ digits)')} className="flex-1 rounded-2xl border-2 border-slate-200 focus:border-brand-500 outline-none px-4 py-3 text-base tracking-widest"
               value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 8))} />
             <button disabled={busy} className="px-4 rounded-2xl bg-brand-600 text-white font-semibold disabled:opacity-50"><KeyRound size={18} /></button>
           </div>
         </form>
-        <button onClick={logout} className="w-full py-3.5 rounded-2xl border-2 border-slate-200 text-slate-700 font-semibold flex items-center justify-center gap-2 active:bg-slate-50"><LogOut size={18} /> Logout</button>
+        <button onClick={logout} className="w-full py-3.5 rounded-2xl border-2 border-slate-200 text-slate-700 font-semibold flex items-center justify-center gap-2 active:bg-slate-50"><LogOut size={18} /> {t('Logout')}</button>
       </div>
     </Sheet>
   )
@@ -465,7 +488,7 @@ function AccountSheet({ onClose }) {
 
 // ── Salary card (header) ──────────────────────────────────────────────────────
 function SalaryCard({ label, m, current, onOpen }) {
-  const month = m?.month ? fmtDate(m.month, { month: 'short', year: 'numeric' }) : ''
+  const month = m?.month ? new Date(`${m.month}T00:00:00Z`).toLocaleDateString(locale(), { month: 'short', year: 'numeric', timeZone: 'UTC' }) : ''
   const day = Number(todayIST().slice(8, 10))
   const paid = m && m.paid !== null && m.paid !== undefined
   const net = m ? (paid ? Number(m.balance) : Number(m.net)) : 0
@@ -476,19 +499,19 @@ function SalaryCard({ label, m, current, onOpen }) {
       {!m ? <div className="h-12 mt-1 rounded-lg bg-white/10 animate-pulse" /> : <>
         <div className="mt-1 space-y-0.5 text-[11px] tabular-nums">
           {m.repairs === undefined
-            ? <div className="flex justify-between"><span className="text-slate-300">Earned</span><span className="font-semibold text-white">{fmtMoney(m.earned)}</span></div>
+            ? <div className="flex justify-between"><span className="text-slate-300">{t('Earned')}</span><span className="font-semibold text-white">{fmtMoney(m.earned)}</span></div>
             : <>
-              <div className="flex justify-between gap-1"><span className="text-slate-300 truncate">Install <span className="text-slate-400">×{m.installs}</span></span><span className="font-semibold text-white">{fmtMoney(m.install_earned)}</span></div>
-              <div className="flex justify-between gap-1"><span className="text-slate-300 truncate">Repair <span className="text-slate-400">×{m.repairs}</span></span><span className="font-semibold text-orange-200">{fmtMoney(m.repair_earned)}</span></div>
+              <div className="flex justify-between gap-1"><span className="text-slate-300 truncate">{t('Install')} <span className="text-slate-400">×{m.installs}</span></span><span className="font-semibold text-white">{fmtMoney(m.install_earned)}</span></div>
+              <div className="flex justify-between gap-1"><span className="text-slate-300 truncate">{t('Repair')} <span className="text-slate-400">×{m.repairs}</span></span><span className="font-semibold text-orange-200">{fmtMoney(m.repair_earned)}</span></div>
             </>}
-          <div className="flex justify-between"><span className="text-slate-300">Collected</span><span className="font-semibold text-amber-300">− {fmtMoney(m.collected)}</span></div>
-          {Number(m.petrol) > 0 && <div className="flex justify-between"><span className="text-slate-300">Petrol</span><span className="font-semibold text-sky-300">+ {fmtMoney(m.petrol)}</span></div>}
-          {Number(m.advance) > 0 && <div className="flex justify-between"><span className="text-slate-300">Advance</span><span className="font-semibold text-rose-300">− {fmtMoney(m.advance)}</span></div>}
-          {paid && <div className="flex justify-between"><span className="text-slate-300">Paid</span><span className="font-semibold text-emerald-300">− {fmtMoney(m.paid)}</span></div>}
+          <div className="flex justify-between"><span className="text-slate-300">{t('Collected')}</span><span className="font-semibold text-amber-300">− {fmtMoney(m.collected)}</span></div>
+          {Number(m.petrol) > 0 && <div className="flex justify-between"><span className="text-slate-300">{t('Petrol')}</span><span className="font-semibold text-sky-300">+ {fmtMoney(m.petrol)}</span></div>}
+          {Number(m.advance) > 0 && <div className="flex justify-between"><span className="text-slate-300">{t('Advance')}</span><span className="font-semibold text-rose-300">− {fmtMoney(m.advance)}</span></div>}
+          {paid && <div className="flex justify-between"><span className="text-slate-300">{t('Paid')}</span><span className="font-semibold text-emerald-300">− {fmtMoney(m.paid)}</span></div>}
         </div>
         <div className="mt-1.5 pt-1.5 border-t border-white/10">
           <p className={`text-lg font-heading font-extrabold tabular-nums leading-none ${net < 0 ? 'text-red-300' : 'text-emerald-300'}`}>{net < 0 ? `− ${fmtMoney(-net)}` : fmtMoney(net)}</p>
-          <p className="text-[10px] text-slate-300/90 mt-0.5">{paid && net === 0 ? `Salary paid ✓ ${fmtDayIST(m.paid_at, { day: 'numeric', month: 'short' })}` : net < 0 ? 'You owe office' : 'Net salary'}</p>
+          <p className="text-[10px] text-slate-300/90 mt-0.5">{paid && net === 0 ? t('Salary paid ✓ {d}', { d: fmtDayIST(m.paid_at, { day: 'numeric', month: 'short' }) }) : t(net < 0 ? 'You owe office' : 'Net salary')}</p>
         </div>
       </>}
     </button>
@@ -497,7 +520,7 @@ function SalaryCard({ label, m, current, onOpen }) {
 
 // ── Salary details (tap a month card) ─────────────────────────────────────────
 function SalarySheet({ label, m, onClose }) {
-  const month = fmtDate(m.month, { month: 'long', year: 'numeric' })
+  const month = new Date(`${m.month}T00:00:00Z`).toLocaleDateString(locale(), { month: 'long', year: 'numeric', timeZone: 'UTC' })
   const paid = m.paid !== null && m.paid !== undefined
   const Row = ({ l, v, c = 'text-slate-900', sub }) => (
     <div className="flex items-start justify-between gap-3 py-2.5">
@@ -506,32 +529,33 @@ function SalarySheet({ label, m, onClose }) {
     </div>
   )
   const entries = m.entries || []
+  const jobsTxt = (n) => (n === 1 ? t('1 job') : t('{n} jobs', { n }))
   return (
     <Sheet title={`${label} · ${month}`} onClose={onClose}>
       <div className="px-5 pt-2 pb-8">
         <div className="divide-y divide-slate-100">
-          {m.repairs === undefined ? <Row l="Earned" v={fmtMoney(m.earned)} sub={`${m.jobs} job${m.jobs === 1 ? '' : 's'} completed`} /> : <>
-            <Row l="Installations" sub={`${m.installs} job${m.installs === 1 ? '' : 's'}`} v={fmtMoney(m.install_earned)} />
-            <Row l="Repairs" sub={`${m.repairs} job${m.repairs === 1 ? '' : 's'}`} v={fmtMoney(m.repair_earned)} />
+          {m.repairs === undefined ? <Row l={t('Earned')} v={fmtMoney(m.earned)} sub={m.jobs === 1 ? t('1 job completed') : t('{n} jobs completed', { n: m.jobs })} /> : <>
+            <Row l={t('Installations')} sub={jobsTxt(m.installs)} v={fmtMoney(m.install_earned)} />
+            <Row l={t('Repairs')} sub={jobsTxt(m.repairs)} v={fmtMoney(m.repair_earned)} />
           </>}
-          <Row l="Collected from customers" sub="Cash / UPI you received" v={`− ${fmtMoney(m.collected)}`} c="text-amber-600" />
-          {m.petrol !== undefined && <Row l="Petrol allowance" v={`+ ${fmtMoney(m.petrol)}`} c="text-sky-700" />}
-          {m.advance !== undefined && <Row l="Salary advance" v={`− ${fmtMoney(m.advance)}`} c="text-rose-600" />}
+          <Row l={t('Collected from customers')} sub={t('Cash / UPI you received')} v={`− ${fmtMoney(m.collected)}`} c="text-amber-600" />
+          {m.petrol !== undefined && <Row l={t('Petrol allowance')} v={`+ ${fmtMoney(m.petrol)}`} c="text-sky-700" />}
+          {m.advance !== undefined && <Row l={t('Salary advance')} v={`− ${fmtMoney(m.advance)}`} c="text-rose-600" />}
           <div className="flex items-center justify-between py-3">
-            <p className="text-base font-bold text-slate-900">Net salary</p>
+            <p className="text-base font-bold text-slate-900">{t('Net salary')}</p>
             <p className={`text-2xl font-heading font-extrabold tabular-nums ${Number(m.net) < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{Number(m.net) < 0 ? `− ${fmtMoney(-m.net)}` : fmtMoney(m.net)}</p>
           </div>
-          {paid && <Row l="Salary paid" sub={fmtDayIST(m.paid_at, { day: 'numeric', month: 'short', year: 'numeric' })} v={`− ${fmtMoney(m.paid)}`} c="text-emerald-700" />}
-          {paid && <Row l="Balance" v={fmtMoney(m.balance)} c={Number(m.balance) === 0 ? 'text-emerald-700' : 'text-slate-900'} />}
+          {paid && <Row l={t('Salary paid')} sub={fmtDayIST(m.paid_at, { day: 'numeric', month: 'short', year: 'numeric' })} v={`− ${fmtMoney(m.paid)}`} c="text-emerald-700" />}
+          {paid && <Row l={t('Balance')} v={fmtMoney(m.balance)} c={Number(m.balance) === 0 ? 'text-emerald-700' : 'text-slate-900'} />}
         </div>
         {entries.length > 0 && (
           <div className="mt-4">
-            <p className="text-xs font-bold uppercase tracking-wide text-slate-400 mb-2">Petrol allowance & advance</p>
+            <p className="text-xs font-bold uppercase tracking-wide text-slate-400 mb-2">{t('Petrol allowance & advance')}</p>
             <div className="space-y-2">
               {entries.map((e, i) => (
                 <div key={i} className={`flex items-center gap-3 rounded-2xl px-4 py-3 ${e.kind === 'PETROL' ? 'bg-sky-50' : 'bg-rose-50'}`}>
                   <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-bold ${e.kind === 'PETROL' ? 'text-sky-800' : 'text-rose-800'}`}>{e.kind === 'PETROL' ? 'Petrol allowance' : 'Salary advance'}</p>
+                    <p className={`text-sm font-bold ${e.kind === 'PETROL' ? 'text-sky-800' : 'text-rose-800'}`}>{t(e.kind === 'PETROL' ? 'Petrol allowance' : 'Salary advance')}</p>
                     <p className="text-xs text-slate-500 truncate">{fmtDate(e.date, { day: 'numeric', month: 'short', year: 'numeric' })}{e.note ? ` · ${e.note}` : ''}</p>
                   </div>
                   <p className={`text-base font-extrabold tabular-nums ${e.kind === 'PETROL' ? 'text-sky-700' : 'text-rose-600'}`}>{e.kind === 'PETROL' ? '+' : '−'} {fmtMoney(e.amount)}</p>
@@ -540,7 +564,7 @@ function SalarySheet({ label, m, onClose }) {
             </div>
           </div>
         )}
-        <p className="text-xs text-slate-400 mt-4">Net salary = Earned − Collected{m.petrol !== undefined ? ' + Petrol − Advance' : ''}. Questions? Call the office.</p>
+        <p className="text-xs text-slate-400 mt-4">{t(m.petrol !== undefined ? 'Net salary = Earned − Collected + Petrol − Advance. Questions? Call the office.' : 'Net salary = Earned − Collected. Questions? Call the office.')}</p>
       </div>
     </Sheet>
   )
@@ -550,6 +574,7 @@ function SalarySheet({ label, m, onClose }) {
 export default function TechApp() {
   const { user, technician } = useAuth()
   const { toast } = useToast()
+  useLang()   // re-render the whole app when the language changes
   const qc = useQueryClient()
   const [tab, setTab] = useState('PENDING')
   const [openId, setOpenId] = useState(null)
@@ -561,9 +586,12 @@ export default function TechApp() {
   const liveRef = useRef(false)
   const [historyDays, setHistoryDays] = useState(HISTORY_SHORT)
 
-  const { data: jobs = [], isLoading, isFetching, isSuccess, refetch, error } = useQuery({
+  const jobsKey = `jobs:${technician?.id}:${historyDays}`
+  const { data: serverJobs = [], isLoading, isFetching, isSuccess, refetch, error } = useQuery({
     queryKey: ['my-jobs', technician?.id, historyDays],
     enabled: !!technician,
+    initialData: () => readCache(jobsKey),   // last loaded list → the app works without internet
+    initialDataUpdatedAt: 0,
     // Live updates push changes instantly; the timer is only a safety net (faster if live updates are down)
     refetchInterval: () => (liveRef.current ? 5 * 60_000 : 60_000),
     refetchOnWindowFocus: true,
@@ -584,9 +612,17 @@ export default function TechApp() {
       if (error?.code === '42703') ({ data, error } = await run(JOB_FIELDS_V2))
       if (error?.code === '42703') ({ data, error } = await run(JOB_FIELDS_OLD))
       if (error) throw error
+      writeCache(jobsKey, data)
       return data
     },
   })
+  // updates waiting on the phone (no internet) are shown as already done
+  const queue = useOfflineQueue()
+  const myQueue = queue.filter((q) => q.techId === technician?.id)
+  const jobs = useMemo(() => applyQueue(serverJobs, technician?.id), [serverJobs, queue, technician?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  const [online, setOnline] = useState(() => navigator.onLine !== false)
+  const [sending, setSending] = useState(false)
+  const offlineNow = !online || (error && isNetworkError(error))
 
   // Detect newly assigned jobs → highlight + vibrate
   useEffect(() => {
@@ -626,10 +662,44 @@ export default function TechApp() {
   const pending = jobs.filter(isOpen)
 
   // Salary: previous month + current month (Earned − Collected = Net), worked out on the server
-  const { data: salary, isError: salaryMissing } = useQuery({
+  const { data: salary, error: salaryError } = useQuery({
     queryKey: ['my-salary', technician?.id], enabled: !!technician, staleTime: 30_000, retry: false,
-    queryFn: async () => { const { data, error } = await supabase.rpc('tech_salary_summary'); if (error) throw error; return data },
+    initialData: () => readCache(`salary:${technician?.id}`), initialDataUpdatedAt: 0,
+    queryFn: async () => { const { data, error } = await supabase.rpc('tech_salary_summary'); if (error) throw error; writeCache(`salary:${technician?.id}`, data); return data },
   })
+  const salaryMissing = !!salaryError && !isNetworkError(salaryError) && !salary
+
+  // Send the waiting updates: when the internet comes back, when the app is opened, and every 20 s while some wait
+  const sync = useCallback(async (manual = false) => {
+    if (!technician) return
+    if (navigator.onLine === false) { if (manual) toast(t('No internet'), 'error'); return }
+    setSending(true)
+    const r = await syncQueue({ techId: technician.id, techCode: technician.tech_code })
+    setSending(false)
+    r.failed.forEach((f) => toast(t('Could not update {o}: {e}', { o: f.orderId, e: f.error }), 'error'))
+    if (r.sent) {
+      if (!r.left) toast(t('All updates sent to office'), 'success')
+      qc.invalidateQueries({ queryKey: ['my-jobs'] }); qc.invalidateQueries({ queryKey: ['my-salary'] }); qc.invalidateQueries({ queryKey: ['done-month'] })
+    }
+  }, [technician, toast, qc])
+  useEffect(() => {
+    const on = () => { setOnline(true); sync(); refresh() }
+    const off = () => setOnline(false)
+    window.addEventListener('online', on); window.addEventListener('offline', off)
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
+  }, [sync, refresh])
+  const waitingCount = myQueue.length
+  // download both item lists while online, so "Mark Completed" works offline even the first time
+  useEffect(() => {
+    if (!technician || navigator.onLine === false) return
+    ;['tech_install_items', 'tech_repair_items'].forEach((fn) => qc.prefetchQuery(itemsQuery(fn)))
+  }, [technician, qc])
+  useEffect(() => {
+    if (!waitingCount) return
+    sync()
+    const id = setInterval(() => sync(), 20_000)
+    return () => clearInterval(id)
+  }, [waitingCount, sync])
   useEffect(() => { qc.invalidateQueries({ queryKey: ['my-salary'] }); qc.invalidateQueries({ queryKey: ['done-month'] }) }, [jobs, qc])   // job completed → totals update
 
   const list = useMemo(() => {
@@ -647,25 +717,25 @@ export default function TechApp() {
   if (!technician) {
     return (
       <div className="min-h-[100dvh] flex items-center justify-center p-6 text-center">
-        <div><p className="font-semibold text-slate-800">Your login is not linked to a technician profile.</p><p className="text-sm text-slate-500 mt-1">Please contact the office.</p></div>
+        <div><p className="font-semibold text-slate-800">{t('Your login is not linked to a technician profile.')}</p><p className="text-sm text-slate-500 mt-1">{t('Please contact the office.')}</p></div>
       </div>
     )
   }
 
-  const TABS = [['PENDING', 'Pending', pending.length], ['COMPLETED', 'Done', jobs.filter((j) => j.status === 'COMPLETED').length], ['REJECTED', 'Not done', jobs.filter((j) => j.status === 'REJECTED').length]]
+  const TABS = [['PENDING', t('Pending'), pending.length], ['COMPLETED', t('Done'), jobs.filter((j) => j.status === 'COMPLETED').length], ['REJECTED', t('Not done'), jobs.filter((j) => j.status === 'REJECTED').length]]
 
   const oldList = (<>
         {isLoading ? Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-36 rounded-3xl bg-white animate-pulse" />)
           : list.length === 0 ? (
             <div className="text-center py-16 px-6">
               <div className="w-16 h-16 mx-auto rounded-full bg-white flex items-center justify-center mb-3">{tab === 'PENDING' ? <CheckCircle2 size={30} className="text-emerald-500" /> : <Clock size={28} className="text-slate-300" />}</div>
-              <p className="font-semibold text-slate-700">{search ? 'No matching jobs' : tab === 'PENDING' ? 'No pending jobs' : `Nothing here in the last ${historyDays} days`}</p>
-              {tab === 'PENDING' && !search && <p className="text-sm text-slate-500 mt-1">New jobs appear here automatically when the office assigns them.</p>}
+              <p className="font-semibold text-slate-700">{search ? t('No matching jobs') : tab === 'PENDING' ? t('No pending jobs') : t('Nothing here in the last {n} days', { n: historyDays })}</p>
+              {tab === 'PENDING' && !search && <p className="text-sm text-slate-500 mt-1">{t('New jobs appear here automatically when the office assigns them.')}</p>}
             </div>
           ) : list.map((j) => j.status === 'COMPLETED' ? <DoneCard key={j.id} job={j} /> : <JobCard key={j.id} job={j} isNew={newIds.has(j.id)} onOpen={() => openJob(j.id)} />)}
         {tab !== 'PENDING' && !isLoading && historyDays === HISTORY_SHORT && (
           <button onClick={() => setHistoryDays(HISTORY_LONG)} className="w-full py-3 rounded-2xl border-2 border-dashed border-slate-300 text-sm font-semibold text-slate-600 active:bg-white">
-            Showing last {HISTORY_SHORT} days · Show last {HISTORY_LONG} days
+            {t('Showing last {a} days · Show last {b} days', { a: HISTORY_SHORT, b: HISTORY_LONG })}
           </button>
         )}
   </>)
@@ -676,19 +746,20 @@ export default function TechApp() {
         <div className="aurora-blob animate-aurora w-56 h-56 -top-24 -left-16 bg-brand-500/50" />
         <div className="aurora-blob animate-aurora-2 w-48 h-48 -top-10 -right-20 bg-sky-500/35" />
         <div className="relative flex items-center justify-between px-4 pt-3 pb-2">
-          <div className="flex items-center gap-2.5">
-            <Logo size={42} />
-            <div><p className="text-[11px] text-slate-400 leading-none">HT Jobs</p><p className="font-bold leading-tight">{user?.name}{technician?.tech_code && <span className="ml-1.5 text-[11px] font-mono font-semibold text-sky-300">{technician.tech_code}</span>}</p></div>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Logo size={42} className="flex-shrink-0" />
+            <div className="min-w-0"><p className="text-[11px] text-slate-400 leading-none">HT Jobs</p><p className="font-bold leading-tight truncate">{user?.name}{technician?.tech_code && <span className="ml-1.5 text-[11px] font-mono font-semibold text-sky-300">{technician.tech_code}</span>}</p></div>
           </div>
-          <div className="flex items-center gap-1">
-            <span className={`mr-1 ${live ? 'text-emerald-400' : 'text-slate-500'}`} title={live ? 'Live' : 'Reconnecting'}>{live ? <Wifi size={16} /> : <WifiOff size={16} />}</span>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <LangSwitch dark className="mr-1" />
+            <span className={`mr-1 ${offlineNow ? 'text-amber-400' : live ? 'text-emerald-400' : 'text-slate-500'}`} title={offlineNow ? t('No internet') : t(live ? 'Live' : 'Reconnecting')}>{!offlineNow && live ? <Wifi size={16} /> : <WifiOff size={16} />}</span>
             <button onClick={() => refetch()} className="w-10 h-10 rounded-full flex items-center justify-center active:bg-white/10"><RefreshCw size={18} className={isFetching ? 'animate-spin' : ''} /></button>
             <button onClick={() => setShowAccount(true)} className="w-10 h-10 rounded-full flex items-center justify-center active:bg-white/10"><User size={20} /></button>
           </div>
         </div>
         {!salaryMissing && (
           <div className="relative grid grid-cols-2 gap-2 px-4 pb-3.5">
-            {[['prev', 'Previous month'], ['cur', 'Current month']].map(([k, label]) => <SalaryCard key={k} label={label} m={salary?.[k]} current={k === 'cur'} onOpen={() => setSalaryOpen(k)} />)}
+            {[['prev', 'Previous month'], ['cur', 'Current month']].map(([k, label]) => <SalaryCard key={k} label={t(label)} m={salary?.[k]} current={k === 'cur'} onOpen={() => setSalaryOpen(k)} />)}
           </div>
         )}
         <div className="relative flex bg-white text-slate-500 rounded-t-3xl">
@@ -705,35 +776,49 @@ export default function TechApp() {
           <div className="rounded-3xl bg-gradient-to-br from-brand-600 to-ink-900 text-white p-4 flex items-start gap-3 shadow-soft">
             <BellRing size={22} className="flex-shrink-0 mt-0.5 text-sky-300" />
             <div className="flex-1 min-w-0">
-              <p className="font-bold">Turn on job notifications</p>
+              <p className="font-bold">{t('Turn on job notifications')}</p>
               <p className="text-sm text-sky-100/90 mt-0.5">
-                {push.state === 'ask' ? 'Get a phone notification every time the office assigns you a job, even when this app is closed.'
+                {t(push.state === 'ask' ? 'Get a phone notification every time the office assigns you a job, even when this app is closed.'
                   : push.state === 'install-first' ? 'On iPhone, add HT Jobs to your Home Screen first, then open it from there to turn on alerts.'
-                  : 'Alerts are blocked. Allow notifications for HT Jobs in your phone Settings.'}
+                  : 'Alerts are blocked. Allow notifications for HT Jobs in your phone Settings.')}
               </p>
-              {push.state === 'ask' && <button onClick={push.enable} disabled={push.busy} className="mt-3 px-4 py-2.5 rounded-xl bg-white text-brand-700 font-bold text-sm active:scale-[.98]">{push.busy ? 'Turning on…' : 'Turn on notifications'}</button>}
-              {push.state === 'install-first' && <button onClick={() => setIosHelp(true)} className="mt-3 px-4 py-2.5 rounded-xl bg-white text-brand-700 font-bold text-sm">How to add to Home Screen</button>}
+              {push.state === 'ask' && <button onClick={push.enable} disabled={push.busy} className="mt-3 px-4 py-2.5 rounded-xl bg-white text-brand-700 font-bold text-sm active:scale-[.98]">{push.busy ? t('Turning on…') : t('Turn on notifications')}</button>}
+              {push.state === 'install-first' && <button onClick={() => setIosHelp(true)} className="mt-3 px-4 py-2.5 rounded-xl bg-white text-brand-700 font-bold text-sm">{t('How to add to Home Screen')}</button>}
             </div>
           </div>
         )}
         {(jobs.length > 6 || tab === 'COMPLETED') && (
           <div className="relative">
             <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input className="w-full rounded-2xl bg-white border border-slate-200 pl-11 pr-4 py-3 text-base outline-none focus:border-brand-500" placeholder={tab === 'COMPLETED' ? 'Search item, area, pincode…' : 'Search name, area, pincode…'} value={search} onChange={(e) => setSearch(e.target.value)} />
+            <input className="w-full rounded-2xl bg-white border border-slate-200 pl-11 pr-4 py-3 text-base outline-none focus:border-brand-500" placeholder={t(tab === 'COMPLETED' ? 'Search item, area, pincode…' : 'Search name, area, pincode…')} value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
         )}
-        {error && <div className="rounded-2xl bg-red-50 border border-red-200 p-4 text-sm text-red-700">{errMsg(error)} <button onClick={() => refetch()} className="underline font-semibold ml-1">Retry</button></div>}
+        {offlineNow && <div className="rounded-2xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm font-semibold text-amber-800 flex items-center gap-2"><CloudOff size={16} className="flex-shrink-0" /> {t('Offline · showing saved jobs')}</div>}
+        {waitingCount > 0 && (
+          <div className="rounded-2xl bg-sky-50 border border-sky-200 px-4 py-3 flex items-center gap-3">
+            <UploadCloud size={20} className={`text-sky-700 flex-shrink-0 ${sending ? 'animate-pulse' : ''}`} />
+            <p className="flex-1 text-sm font-semibold text-sky-900">{sending ? t('Sending saved updates…') : waitingCount === 1 ? t('1 update waiting to send') : t('{n} updates waiting to send', { n: waitingCount })}</p>
+            <button onClick={() => sync(true)} disabled={sending} className="px-3 py-2 rounded-xl bg-sky-600 text-white text-xs font-bold active:scale-[.98] disabled:opacity-50">{t('Send now')}</button>
+          </div>
+        )}
+        {error && !offlineNow && <div className="rounded-2xl bg-red-50 border border-red-200 p-4 text-sm text-red-700">{errMsg(error)} <button onClick={() => refetch()} className="underline font-semibold ml-1">{t('Retry')}</button></div>}
+        {tab === 'COMPLETED' && myQueue.some((q) => q.patch?.status === 'COMPLETED') && (
+          <div className="space-y-2">
+            <p className="text-xs font-bold uppercase tracking-wide text-sky-700 px-1 flex items-center gap-1"><UploadCloud size={13} /> {t('Waiting to send')}</p>
+            {jobs.filter((j) => j._queued && j.status === 'COMPLETED').map((j) => <DoneCard key={j.id} job={j} />)}
+          </div>
+        )}
         {tab === 'COMPLETED' ? <DoneCalendar technicianId={technician?.id} search={search}>{oldList}</DoneCalendar> : oldList}
       </main>
 
-      <WelcomeModal mobile name={user?.name} badge={technician?.tech_code ? `Technician ID · ${technician.tech_code}` : 'Technician'}
+      <WelcomeModal mobile greeting={t('Welcome,')} name={user?.name} badge={technician?.tech_code ? t('Technician ID · {c}', { c: technician.tech_code }) : t('Technician')}
         lines={[
-          <><ClipboardList size={16} className="text-brand-600 flex-shrink-0" /> {isLoading ? 'Loading your jobs…' : pending.length ? `You have ${pending.length} pending job${pending.length > 1 ? 's' : ''}` : 'No pending jobs right now'}</>,
-          <><CheckCircle2 size={16} className="text-emerald-600 flex-shrink-0" /> Mark each job Completed with the amount collected</>,
-        ]} closeLabel="View my jobs" />
+          <><ClipboardList size={16} className="text-brand-600 flex-shrink-0" /> {isLoading ? t('Loading your jobs…') : pending.length ? (pending.length === 1 ? t('You have 1 pending job') : t('You have {n} pending jobs', { n: pending.length })) : t('No pending jobs right now')}</>,
+          <><CheckCircle2 size={16} className="text-emerald-600 flex-shrink-0" /> {t('Mark each job Completed with the amount collected')}</>,
+        ]} closeLabel={t('View my jobs')} />
       {open && <JobDetail job={open} onClose={() => setOpenId(null)} refresh={refresh} />}
       {showAccount && <AccountSheet onClose={() => setShowAccount(false)} />}
-      {salaryOpen && salary?.[salaryOpen] && <SalarySheet label={salaryOpen === 'prev' ? 'Previous month' : 'Current month'} m={salary[salaryOpen]} onClose={() => setSalaryOpen(null)} />}
+      {salaryOpen && salary?.[salaryOpen] && <SalarySheet label={t(salaryOpen === 'prev' ? 'Previous month' : 'Current month')} m={salary[salaryOpen]} onClose={() => setSalaryOpen(null)} />}
       {iosHelp && <IOSInstallSheet appName="HT Jobs" onClose={() => setIosHelp(false)} />}
     </div>
   )
