@@ -364,3 +364,9 @@ No SQL to run. The office web app stays in English.
 - When the internet is back, everything is sent automatically (also every 20 seconds and whenever the app is opened): photos are uploaded first, then the job is completed. If the office changed the job meanwhile (reassigned, cancelled), the server's version wins and the technician sees "Could not update …".
 - Notes, Re-open and the Done calendar's newest data need internet.
 - Note: a job completed offline gets its completion time when it reaches the server.
+
+## Update — Nov 2026 (17): iPhone top bar fixes · photos required
+
+- **Hitech Ops (office) on iPhone / installed app:** the header (with the ☰ menu) now starts below the phone's status bar; a dark strip sits behind the clock / battery, and the side menu opens below it too.
+- **HT Jobs:** the top of the header is a clean dark colour (no blurred colour patches behind the status bar).
+- **Photos required:** `PHOTOS_REQUIRED: true` in `1-Website/config.js` — a job cannot be marked completed without at least 1 installation photo (also works offline: the photo waits on the phone and uploads later). Set it back to `false` to make photos optional.

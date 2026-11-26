@@ -742,9 +742,9 @@ export default function TechApp() {
 
   return (
     <div className="min-h-[100dvh] bg-[#f1f3fa]">
-      <header className="noise bg-gradient-to-br from-ink-900 via-ink-950 to-[#071433] text-white sticky top-0 z-30 overflow-hidden shadow-[0_6px_16px_-12px_rgba(11,17,34,.5)]" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-        <div className="aurora-blob animate-aurora w-56 h-56 -top-24 -left-16 bg-brand-500/50" />
-        <div className="aurora-blob animate-aurora-2 w-48 h-48 -top-10 -right-20 bg-sky-500/35" />
+      <header className="bg-gradient-to-b from-ink-950 via-ink-950 to-[#071433] text-white sticky top-0 z-30 overflow-hidden shadow-[0_6px_16px_-12px_rgba(11,17,34,.5)]" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+        {/* soft colour only lower in the header, so the phone's status bar area stays clean and dark */}
+        <div className="aurora-blob w-56 h-56 top-24 -left-24 bg-brand-500/30" />
         <div className="relative flex items-center justify-between px-4 pt-3 pb-2">
           <div className="flex items-center gap-2.5 min-w-0">
             <Logo size={42} className="flex-shrink-0" />

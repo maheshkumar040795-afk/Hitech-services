@@ -20,5 +20,5 @@ window.HITECH_CONFIG = {
   CLOUDINARY_CLOUD_NAME: 'kohueyyl',
   CLOUDINARY_UPLOAD_PRESET: 'ht_jobs',
   // true = technician must add at least 1 photo to mark a job completed; false = photos optional
-  PHOTOS_REQUIRED: false,
+  PHOTOS_REQUIRED: true,
 }

@@ -76,7 +76,7 @@ export default function AppShell() {
     <aside className={`noise relative flex flex-col h-full overflow-hidden bg-gradient-to-b from-ink-900 via-ink-900 to-ink-950 ${mobile ? 'w-64' : collapsed ? 'w-16' : 'w-[var(--sidebar-w)]'} transition-[width] duration-300 flex-shrink-0`}>
       <div className="aurora-blob animate-aurora w-56 h-56 -top-20 -left-24 bg-brand-500/50" />
       <div className="aurora-blob animate-aurora-2 w-48 h-48 bottom-10 -right-28 bg-sky-500/30" />
-      <div className="relative flex items-center justify-between px-4 py-4 border-b border-white/[.07]">
+      <div className="relative flex items-center justify-between px-4 py-4 border-b border-white/[.07]" style={mobile ? { paddingTop: 'calc(env(safe-area-inset-top) + 1rem)' } : undefined}>
         {(!collapsed || mobile) ? (
           <div className="flex items-center gap-2.5">
             <Logo size={40} />
@@ -128,7 +128,7 @@ export default function AppShell() {
   )
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-[100dvh] overflow-hidden">
       <WelcomeModal name={user?.name} badge={user?.role === 'ADMIN' ? 'Administrator' : 'Office Staff'}
         lines={[
           <><ShieldCheck size={16} className="text-brand-600 flex-shrink-0" /> Signed in to the Hitech Services operations dashboard</>,
@@ -144,6 +144,8 @@ export default function AppShell() {
       )}
 
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        {/* iPhone / installed app: the phone's status bar (clock, battery) sits on a dark strip, the header starts below it */}
+        <div className="lg:hidden flex-shrink-0 bg-ink-900" style={{ height: 'env(safe-area-inset-top)' }} />
         <header className="h-[var(--header-h)] bg-white/70 backdrop-blur-xl border-b border-slate-200/70 flex items-center justify-between px-4 lg:px-6 flex-shrink-0 gap-3 relative z-20">
           <div className="flex items-center gap-3 min-w-0">
             <button onClick={() => setMobileOpen(true)} className="lg:hidden p-2 -ml-2 rounded-lg hover:bg-slate-100 text-slate-600"><Menu size={18} /></button>
