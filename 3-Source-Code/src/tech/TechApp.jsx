@@ -427,7 +427,7 @@ function DoneCard({ job }) {
       </div>
       <div className="flex items-start gap-2 text-[15px] text-slate-800"><Wrench size={15} className="text-slate-400 mt-1 flex-shrink-0" /><span className="font-semibold">{job.installed_item || job.service || '—'}</span></div>
       <div className="flex items-center gap-2 text-sm"><Banknote size={15} className="text-slate-400 flex-shrink-0" />
-        {amazon ? <span className="font-semibold text-amber-700">{t('Paid on Amazon · nothing collected')}</span>
+        {amazon ? <span className="font-semibold text-amber-700">{t('Paid on Amazon')}</span>
           : <span><b className="text-slate-900">{fmtMoney(job.cod_amount)}</b> <span className="text-slate-500">{t('cash collected')}</span></span>}</div>
       {job.photos?.length > 0 && (
         <div className="flex gap-1.5 overflow-x-auto pt-0.5">
@@ -771,13 +771,12 @@ export default function TechApp() {
 
   return (
     <div className="min-h-[100dvh] bg-[#f1f3fa]">
-      <header className="bg-gradient-to-b from-ink-950 via-ink-950 to-[#071433] text-white sticky top-0 z-30 overflow-hidden shadow-[0_6px_16px_-12px_rgba(11,17,34,.5)]" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-        {/* soft colour only lower in the header, so the phone's status bar area stays clean and dark */}
-        <div className="aurora-blob w-56 h-56 top-24 -left-24 bg-brand-500/30" />
+      {/* one solid colour from the status bar down: iPhone darkens the top edge of the page, a gradient or glow there looked faded */}
+      <header className="bg-[#0b1122] text-white sticky top-0 z-30 overflow-hidden shadow-[0_6px_16px_-12px_rgba(11,17,34,.5)]" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="relative flex items-center justify-between px-4 pt-3 pb-2">
           <div className="flex items-center gap-2.5 min-w-0">
             <Logo size={42} className="flex-shrink-0" />
-            <div className="min-w-0"><p className="text-[11px] text-slate-400 leading-none">HT Jobs</p><p className="font-bold leading-tight truncate">{user?.name}{technician?.tech_code && <span className="ml-1.5 text-[11px] font-mono font-semibold text-sky-300">{technician.tech_code}</span>}</p></div>
+            <div className="min-w-0"><p className="text-[11px] text-slate-300 leading-none">HT Jobs</p><p className="font-bold leading-tight truncate">{user?.name}{technician?.tech_code && <span className="ml-1.5 text-[11px] font-mono font-semibold text-sky-300">{technician.tech_code}</span>}</p></div>
           </div>
           <div className="flex items-center gap-1 flex-shrink-0">
             <LangSwitch dark className="mr-1" />

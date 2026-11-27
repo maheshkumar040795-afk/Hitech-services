@@ -36,6 +36,8 @@ export default defineConfig({
           .replace('content="Hitech Ops"', 'content="HT Jobs"')
           .replace('<html lang="en">', '<html lang="en" class="tech-app" style="background:#0b1122">')   // dark behind the iPhone status bar from the first paint
           .replace('content="#1d55e0"', 'content="#0b1122"')
+          // solid status bar for HT Jobs: iOS does not lay its fading top edge over the header
+          .replace('content="black-translucent"', 'content="black"')
           .replace(/<title>[^<]*<\/title>/, '<title>HT Jobs — Hitech Services</title>')
           .replace('<script src="../config.js">', '<script>window.HT_TECH_ENTRY = true</script>\n    <script src="../config.js">')
         fs.mkdirSync(path.join(out, 'tech'), { recursive: true })

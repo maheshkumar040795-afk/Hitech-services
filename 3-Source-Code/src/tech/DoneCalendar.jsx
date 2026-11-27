@@ -135,8 +135,9 @@ function DoneJob({ j, showDate }) {
         <span>{j.location || '—'}{j.pin_code && <b className="ml-1.5 font-mono text-slate-900">{j.pin_code}</b>}{j.region && <span className="ml-1.5 text-[10px] font-bold uppercase text-slate-400">{t(j.region === 'OUTSIDE' ? 'Outside Chennai' : 'Chennai')}</span>}</span></div>
       <div className="grid grid-cols-2 gap-2 pt-1">
         <div className="rounded-2xl bg-emerald-50 px-3 py-2"><p className="text-[10px] font-bold uppercase text-emerald-700/80 flex items-center gap-1"><IndianRupee size={10} /> {t('Earned')}</p><p className="text-lg font-heading font-extrabold text-emerald-700 tabular-nums">{fmtMoney(j.earned)}</p></div>
-        <div className={`rounded-2xl px-3 py-2 ${amazon ? 'bg-violet-50' : 'bg-amber-50'}`}><p className={`text-[10px] font-bold uppercase flex items-center gap-1 ${amazon ? 'text-violet-700/80' : 'text-amber-700/80'}`}><Banknote size={10} /> {t(amazon ? 'Paid on Amazon' : 'Cash collected')}</p>
-          <p className={`text-lg font-heading font-extrabold tabular-nums ${amazon ? 'text-violet-700' : 'text-amber-700'}`}>{amazon ? '₹0' : fmtMoney(j.collected)}</p></div>
+        <div className={`rounded-2xl px-3 py-2 ${amazon ? 'bg-violet-50' : 'bg-amber-50'}`}><p className={`text-[10px] font-bold uppercase flex items-center gap-1 ${amazon ? 'text-violet-700/80' : 'text-amber-700/80'}`}><Banknote size={10} /> {t(amazon ? 'Payment' : 'Cash collected')}</p>
+          {amazon ? <p className="text-[15px] leading-7 font-heading font-extrabold text-violet-700">{t('Paid on Amazon')}</p>
+            : <p className="text-lg font-heading font-extrabold tabular-nums text-amber-700">{fmtMoney(j.collected)}</p>}</div>
       </div>
       {j.photos?.length > 0 && (
         <div className="flex gap-1.5 overflow-x-auto pt-0.5">
