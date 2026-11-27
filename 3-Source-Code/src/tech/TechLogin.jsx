@@ -1,3 +1,4 @@
+import { OFFICE_PHONES } from './OfficeContacts'
 import { useState } from 'react'
 import { AlertCircle, Eye, EyeOff, Download, Share } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
@@ -70,6 +71,7 @@ export default function TechLogin() {
             {busy ? t('Logging in…') : t('Login')}
           </button>
           <button type="button" onClick={() => setForgot(true)} className="block mx-auto text-sm font-semibold text-brand-700 py-1 active:opacity-60">{t('Forgot PIN?')}</button>
+          <p className="text-center text-xs text-slate-500">{t('Help')}: <a href={OFFICE_PHONES[0].tel} className="font-semibold text-emerald-700 underline-offset-2 underline">{OFFICE_PHONES[0].show}</a> · <a href={OFFICE_PHONES[1].tel} className="font-semibold text-emerald-700 underline-offset-2 underline">{OFFICE_PHONES[1].show}</a></p>
         </form>
 
         {!isInstalled && (

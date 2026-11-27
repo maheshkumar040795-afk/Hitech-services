@@ -263,6 +263,10 @@ const TA = {
   'Request sent': 'கோரிக்கை அனுப்பப்பட்டது',
   'If {m} is registered, the office will send your new PIN on WhatsApp. Then log in with the new PIN.': '{m} பதிவு செய்யப்பட்டிருந்தால், ஆபீஸ் உங்கள் புதிய PIN-ஐ WhatsApp-ல் அனுப்பும். பிறகு புதிய PIN-ல் லாகின் செய்யவும்.',
   'Call office': 'ஆபீஸுக்கு அழை',
+  'Need help? Call the Hitech Services office.': 'உதவி வேண்டுமா? Hitech Services ஆபீஸுக்கு அழைக்கவும்.',
+  'Primary office number': 'முதன்மை ஆபீஸ் எண்',
+  'Secondary number': 'இரண்டாவது எண்',
+  'Help': 'உதவி',
   'Back to login': 'லாகினுக்குத் திரும்பு',
   'PIN reset is not set up on the server yet. Please call the office for now.': 'PIN மாற்றும் வசதி இன்னும் தயாராகவில்லை. இப்போதைக்கு ஆபீஸுக்கு போன் செய்யவும்.',
 }

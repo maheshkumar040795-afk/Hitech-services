@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Phone, MapPin, MessageCircle, ChevronRight, X, CheckCircle2, XCircle, Clock, RefreshCw, LogOut,
   User, Lock, Send, Search, RotateCcw, Pencil, KeyRound, Wifi, WifiOff, CalendarDays, ClipboardList, CalendarClock, Banknote, BellRing, ShoppingBag, Wrench,
-  Hammer, CloudOff, UploadCloud, AlertCircle,
+  Hammer, CloudOff, UploadCloud, AlertCircle, Headset,
 } from 'lucide-react'
 import { supabase, rpc, errMsg } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -18,6 +18,7 @@ import IOSInstallSheet from '../components/ui/IOSInstallSheet'
 import PhotoPicker, { photoItems, photoUrls, offlinePhotos } from './PhotoPicker'
 import { readCache, writeCache, isNetworkError, enqueue, sendItem, applyQueue, syncQueue, useOfflineQueue } from './offline'
 import DoneCalendar from './DoneCalendar'
+import OfficeContacts from './OfficeContacts'
 import { PHOTOS_ENABLED, PHOTOS_REQUIRED, photoThumb } from '../lib/photos'
 import { tr as t, useLang, LangSwitch, locale } from './i18n'
 
@@ -509,6 +510,7 @@ function AccountSheet({ onClose }) {
             <button disabled={busy} className="px-4 rounded-2xl bg-brand-600 text-white font-semibold disabled:opacity-50"><KeyRound size={18} /></button>
           </div>
         </form>
+        <div><label className="block text-sm font-semibold text-slate-700 mb-2">{t('Call office')}</label><OfficeContacts compact /></div>
         <button onClick={logout} className="w-full py-3.5 rounded-2xl border-2 border-slate-200 text-slate-700 font-semibold flex items-center justify-center gap-2 active:bg-slate-50"><LogOut size={18} /> {t('Logout')}</button>
       </div>
     </Sheet>
@@ -612,6 +614,7 @@ export default function TechApp() {
   const [tab, setTab] = useState('PENDING')
   const [openId, setOpenId] = useState(null)
   const [showAccount, setShowAccount] = useState(false)
+  const [showOffice, setShowOffice] = useState(false)
   const [salaryOpen, setSalaryOpen] = useState(null)   // 'prev' | 'cur' → salary details sheet
   const [search, setSearch] = useState('')
   const [newIds, setNewIds] = useState(() => new Set())
@@ -787,10 +790,12 @@ export default function TechApp() {
             <div className="min-w-0"><p className="text-[11px] text-slate-300 leading-none">HT Jobs</p><p className="font-bold leading-tight truncate">{user?.name}{technician?.tech_code && <span className="ml-1.5 text-[11px] font-mono font-semibold text-sky-300">{technician.tech_code}</span>}</p></div>
           </div>
           <div className="flex items-center gap-1 flex-shrink-0">
-            <LangSwitch dark className="mr-1" />
-            <span className={`mr-1 ${offlineNow ? 'text-amber-400' : live ? 'text-emerald-400' : 'text-slate-500'}`} title={offlineNow ? t('No internet') : t(live ? 'Live' : 'Reconnecting')}>{!offlineNow && live ? <Wifi size={16} /> : <WifiOff size={16} />}</span>
-            <button onClick={() => refetch()} className="w-10 h-10 rounded-full flex items-center justify-center active:bg-white/10"><RefreshCw size={18} className={isFetching ? 'animate-spin' : ''} /></button>
-            <button onClick={() => setShowAccount(true)} className="w-10 h-10 rounded-full flex items-center justify-center active:bg-white/10"><User size={20} /></button>
+            <LangSwitch dark className="mr-0.5" />
+            {/* connection icon only when there is a problem — keeps room for the name */}
+            {(offlineNow || !live) && <span className={`mr-0.5 ${offlineNow ? 'text-amber-400' : 'text-slate-500'}`} title={offlineNow ? t('No internet') : t('Reconnecting')}><WifiOff size={16} /></span>}
+            <button onClick={() => setShowOffice(true)} aria-label={t('Call office')} className="w-9 h-9 rounded-full flex items-center justify-center bg-emerald-500/15 text-emerald-300 active:bg-emerald-500/30"><Headset size={19} /></button>
+            <button onClick={() => refetch()} className="w-9 h-9 rounded-full flex items-center justify-center active:bg-white/10"><RefreshCw size={18} className={isFetching ? 'animate-spin' : ''} /></button>
+            <button onClick={() => setShowAccount(true)} className="w-9 h-9 rounded-full flex items-center justify-center active:bg-white/10"><User size={20} /></button>
           </div>
         </div>
         {!salaryMissing && (
@@ -854,6 +859,7 @@ export default function TechApp() {
         ]} closeLabel={t('View my jobs')} />
       {open && <JobDetail job={open} onClose={() => setOpenId(null)} refresh={refresh} />}
       {showAccount && <AccountSheet onClose={() => setShowAccount(false)} />}
+      {showOffice && <Sheet title={t('Call office')} onClose={() => setShowOffice(false)}><div className="p-5"><OfficeContacts /></div></Sheet>}
       {salaryOpen && salary?.[salaryOpen] && <SalarySheet label={t(salaryOpen === 'prev' ? 'Previous month' : 'Current month')} m={salary[salaryOpen]} onClose={() => setSalaryOpen(null)} />}
       {iosHelp && <IOSInstallSheet appName="HT Jobs" onClose={() => setIosHelp(false)} />}
     </div>
