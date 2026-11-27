@@ -60,6 +60,7 @@ const TA = {
   'Customer already paid on Amazon — nothing to collect (₹0).': 'வாடிக்கையாளர் ஏற்கனவே Amazon-ல் செலுத்திவிட்டார் — வசூலிக்க எதுவும் இல்லை (₹0).',
   'Amount you received from the customer (cash or UPI). It is deducted from your pay for this job.': 'வாடிக்கையாளரிடம் நீங்கள் வாங்கிய தொகை (பணம் அல்லது UPI). இது இந்த வேலைக்கான உங்கள் சம்பளத்தில் கழிக்கப்படும்.',
   'Amount collected': 'வசூலித்த தொகை',
+  'Amount fixed by office · cannot be changed': 'அலுவலகம் நிர்ணயித்த தொகை · மாற்ற முடியாது',
   'Note': 'குறிப்பு',
   '(optional)': '(விருப்பம்)',
   'e.g. Installed with extra pipe 2 m': 'எ.கா. கூடுதல் பைப் 2 மீ வைத்து இன்ஸ்டால் செய்தேன்',

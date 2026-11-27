@@ -1,5 +1,5 @@
 /* Hitech Services service worker — makes the app installable and lets HT Jobs open offline (job data is saved by the app itself) */
-const CACHE = 'hitech-v17'
+const CACHE = 'hitech-v18'
 // app.js is saved at install, so HT Jobs opens without internet even right after it was installed
 const SHELL = ['./', './index.html', './offline.html', './config.js', './manifest.json', './manifest-tech.json', './logo.png', './logo-160.png', './tech/', './assets/app.js']
 

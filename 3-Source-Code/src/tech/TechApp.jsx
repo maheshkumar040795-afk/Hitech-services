@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Phone, MapPin, MessageCircle, ChevronRight, X, CheckCircle2, XCircle, Clock, RefreshCw, LogOut,
   User, Lock, Send, Search, RotateCcw, Pencil, KeyRound, Wifi, WifiOff, CalendarDays, ClipboardList, CalendarClock, Banknote, BellRing, ShoppingBag, Wrench,
-  Hammer, CloudOff, UploadCloud,
+  Hammer, CloudOff, UploadCloud, AlertCircle,
 } from 'lucide-react'
 import { supabase, rpc, errMsg } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -98,19 +98,29 @@ function CompleteSheet({ job, onClose, onDone }) {
   const [amount, setAmount] = useState(done && job.payment_mode !== 'AMAZON' && Number(job.cod_amount) > 0 ? String(Number(job.cod_amount)) : toCollect > 0 ? String(toCollect) : '')
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
+  // validation message shown inside the form (next to the field and above Submit), not only as a toast
+  const [err, setErr] = useState({ field: '', msg: '' })
+  const itemRef = useRef(null), payRef = useRef(null), photoRef = useRef(null)
+  const fail = (field, msg, ref) => {
+    setErr({ field, msg })
+    navigator.vibrate?.([40, 60, 40])
+    ref?.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+  useEffect(() => { setErr({ field: '', msg: '' }) }, [item, pay, amount, photos])
   const submit = async (e) => {
     e.preventDefault()
-    if (items.length && !item) return toast(t(repair ? 'Select what you repaired' : 'Select what you installed'), 'error')
-    if (!pay) return toast(t('Select Collect from customer or Paid on Amazon'), 'error')
+    if (items.length && !item) return fail('item', t(repair ? 'Select what you repaired' : 'Select what you installed'), itemRef)
+    if (!pay) return fail('pay', t('Select Collect from customer or Paid on Amazon'), payRef)
     const amazon = pay === 'AMAZON' && !(toCollect > 0)
-    const v = amazon ? 0 : parseFloat(amount)
-    if (!amazon && (amount === '' || isNaN(v) || v <= 0)) return toast(t('Enter the amount collected from the customer'), 'error')
+    // amount fixed by the office cannot be changed by the technician
+    const v = amazon ? 0 : toCollect > 0 ? toCollect : parseFloat(amount)
+    if (!amazon && !(toCollect > 0) && (amount === '' || isNaN(v) || v <= 0)) return fail('pay', t('Enter the amount collected from the customer'), payRef)
     const urls = photoUrls(photos)
     const waiting = offlinePhotos(photos)   // taken without internet, upload later
     if (PHOTOS_ENABLED) {
-      if (photos.some((p) => p.status === 'uploading')) return toast(t('Please wait, photos are still uploading'), 'error')
-      if (photos.some((p) => p.status === 'error')) return toast(t('A photo did not upload. Tap it to retry, or remove it (✕).'), 'error')
-      if (PHOTOS_REQUIRED && !urls.length && !waiting.length) return toast(t('Add at least 1 photo of the installation'), 'error')
+      if (photos.some((p) => p.status === 'uploading')) return fail('photo', t('Please wait, photos are still uploading'), photoRef)
+      if (photos.some((p) => p.status === 'error')) return fail('photo', t('A photo did not upload. Tap it to retry, or remove it (✕).'), photoRef)
+      if (PHOTOS_REQUIRED && !urls.length && !waiting.length) return fail('photo', t('Add at least 1 photo of the installation'), photoRef)
     }
     const mode = amazon ? 'AMAZON' : 'CASH'   // CASH = collected from customer
     const update = {
@@ -140,6 +150,8 @@ function CompleteSheet({ job, onClose, onDone }) {
     } finally { setBusy(false) }
   }
   const choice = (on, active) => `rounded-2xl border-2 font-bold transition ${active ? on : 'border-slate-200 text-slate-600 active:bg-slate-50'}`
+  const FieldErr = ({ f }) => err.field === f ? <p role="alert" className="mt-2 flex items-start gap-1.5 text-sm font-semibold text-red-600"><AlertCircle size={16} className="flex-shrink-0 mt-0.5" /> {err.msg}</p> : null
+  const box = (f) => err.field === f ? 'rounded-2xl ring-2 ring-red-400 ring-offset-4' : ''
   return (
     <Sheet title={t(repair ? 'Mark repair completed' : 'Mark job completed')} onClose={onClose}>
       <form onSubmit={submit} className="p-5 space-y-5">
@@ -156,8 +168,8 @@ function CompleteSheet({ job, onClose, onDone }) {
         )}
 
         {(itemsLoading || items.length > 0) && (
-          <div>
-            <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 mb-2"><Wrench size={15} /> {t(repair ? '1. What did you repair?' : '1. What did you install?')}</label>
+          <div ref={itemRef} className={box('item')}>
+            <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 mb-2"><Wrench size={15} /> {t(repair ? '1. What did you repair?' : '1. What did you install?')} <span className="text-red-500">*</span></label>
             {itemsLoading ? <div className="h-12 rounded-2xl bg-slate-100 animate-pulse" /> : (
               <div className="space-y-1.5 max-h-64 overflow-y-auto pr-0.5">
                 {items.map((i) => (
@@ -170,11 +182,12 @@ function CompleteSheet({ job, onClose, onDone }) {
                 ))}
               </div>
             )}
+            <FieldErr f="item" />
           </div>
         )}
 
-        <div>
-          <label className="block text-sm font-semibold text-slate-700 mb-2">{t(items.length ? '2. Payment' : 'Payment')}</label>
+        <div ref={payRef} className={box('pay')}>
+          <label className="block text-sm font-semibold text-slate-700 mb-2">{t(items.length ? '2. Payment' : 'Payment')} <span className="text-red-500">*</span></label>
           <div className={`grid gap-2 ${toCollect > 0 ? 'grid-cols-1' : 'grid-cols-2'}`}>
             <button type="button" onClick={() => setPay('COLLECT')}
               className={`py-3.5 px-2 flex flex-col items-center gap-1 text-sm ${choice('border-emerald-500 bg-emerald-50 text-emerald-700', pay === 'COLLECT')}`}>
@@ -187,21 +200,37 @@ function CompleteSheet({ job, onClose, onDone }) {
           {pay === 'COLLECT' && (
             <div className="mt-3 space-y-3 rounded-2xl bg-slate-50 p-3">
               <p className="text-xs text-slate-600">{t('Amount you received from the customer (cash or UPI). It is deducted from your pay for this job.')}</p>
-              <div className="flex items-center rounded-2xl border-2 border-slate-200 bg-white focus-within:border-emerald-500 overflow-hidden">
-                <span className="pl-4 text-2xl font-bold text-slate-400">₹</span>
-                <input type="number" inputMode="decimal" min="0" step="0.01" placeholder={t('Amount collected')} autoFocus
-                  className="flex-1 min-w-0 py-3.5 px-3 text-2xl font-bold outline-none bg-transparent placeholder:text-base placeholder:font-medium" value={amount} onChange={(e) => setAmount(e.target.value)} />
-              </div>
+              {toCollect > 0 ? (
+                <div className="flex items-center rounded-2xl border-2 border-slate-200 bg-slate-100 overflow-hidden" aria-readonly="true">
+                  <span className="pl-4 text-2xl font-bold text-slate-400">₹</span>
+                  <input type="text" readOnly tabIndex={-1} value={String(toCollect)} aria-label={t('Amount collected')}
+                    className="flex-1 min-w-0 py-3.5 px-3 text-2xl font-bold outline-none bg-transparent text-slate-700 pointer-events-none select-none" />
+                  <Lock size={18} className="mr-4 text-slate-400 flex-shrink-0" />
+                </div>
+              ) : (
+                <div className="flex items-center rounded-2xl border-2 border-slate-200 bg-white focus-within:border-emerald-500 overflow-hidden">
+                  <span className="pl-4 text-2xl font-bold text-slate-400">₹</span>
+                  <input type="number" inputMode="decimal" min="0" step="0.01" placeholder={t('Amount collected')} autoFocus
+                    className="flex-1 min-w-0 py-3.5 px-3 text-2xl font-bold outline-none bg-transparent placeholder:text-base placeholder:font-medium" value={amount} onChange={(e) => setAmount(e.target.value)} />
+                </div>
+              )}
+              {toCollect > 0 && <p className="text-xs text-slate-500 flex items-center gap-1"><Lock size={12} /> {t('Amount fixed by office · cannot be changed')}</p>}
             </div>
           )}
+          <FieldErr f="pay" />
         </div>
-        {PHOTOS_ENABLED && <PhotoPicker items={photos} setItems={setPhotos} orderId={job.order_id} techCode={technician?.tech_code} />}
+        {PHOTOS_ENABLED && <div ref={photoRef} className={box('photo')}>
+          <PhotoPicker items={photos} setItems={setPhotos} orderId={job.order_id} techCode={technician?.tech_code} />
+          <FieldErr f="photo" />
+        </div>}
 
         <div>
           <label className="block text-sm font-semibold text-slate-700 mb-2">{t('Note')} <span className="font-normal text-slate-400">{t('(optional)')}</span></label>
           <textarea rows={2} className="w-full rounded-2xl border-2 border-slate-200 focus:border-emerald-500 outline-none p-3 text-base"
             placeholder={t('e.g. Installed with extra pipe 2 m')} value={note} onChange={(e) => setNote(e.target.value)} />
         </div>
+        {err.msg && <div role="alert" className="rounded-2xl bg-red-50 border-2 border-red-300 p-3 flex items-start gap-2 text-sm font-bold text-red-700">
+          <AlertCircle size={18} className="flex-shrink-0 mt-0.5" /> {err.msg}</div>}
         <button disabled={busy || photos.some((p) => p.status === 'uploading')} className="w-full py-4 rounded-2xl bg-emerald-600 active:bg-emerald-700 text-white text-lg font-bold flex items-center justify-center gap-2 disabled:opacity-60">
           <CheckCircle2 size={22} /> {busy ? t('Saving…') : photos.some((p) => p.status === 'uploading') ? t('Uploading photos…') : t('Submit — Job Completed')}
         </button>

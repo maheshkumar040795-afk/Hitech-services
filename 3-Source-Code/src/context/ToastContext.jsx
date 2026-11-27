@@ -29,14 +29,16 @@ export function ToastProvider({ children }) {
     <ToastContext.Provider value={{ toast }}>
       {children}
       {/* Toast container */}
-      <div className="fixed top-4 right-4 z-[999] space-y-2 pointer-events-none">
+      {/* below the iPhone notch / status bar; full width on phones, top-right on desktop */}
+      <div className="fixed left-3 right-3 sm:left-auto sm:right-4 z-[999] space-y-2 pointer-events-none flex flex-col items-stretch sm:items-end"
+           style={{ top: 'calc(env(safe-area-inset-top) + 12px)' }}>
         {toasts.map(t => {
           const Icon = ICONS[t.type] || Info
           return (
             <div
               key={t.id}
-              className={`relative overflow-hidden flex items-start gap-3 pl-5 pr-4 py-3.5 rounded-2xl bg-white/90 backdrop-blur-xl border border-slate-200/70
-                         shadow-[0_18px_40px_-14px_rgba(11,17,34,.35)] min-w-[280px] max-w-sm pointer-events-auto animate-scale-in
+              className={`relative overflow-hidden flex items-start gap-3 pl-5 pr-4 py-3.5 rounded-2xl bg-white border border-slate-200
+                         shadow-[0_18px_40px_-10px_rgba(11,17,34,.55)] w-full sm:w-auto sm:min-w-[280px] sm:max-w-sm pointer-events-auto animate-scale-in
                          before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-1 ${STYLES[t.type]}`}
             >
               <Icon size={16} className="flex-shrink-0 mt-0.5" />
