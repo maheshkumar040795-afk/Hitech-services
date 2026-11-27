@@ -35,6 +35,8 @@
   /* HT Jobs (technician app): the page behind the status bar is the same dark navy as the header.
      iOS 26 tints the status bar area from the page background — a light page showed as a grey blur. */
   html.tech-app, html.tech-app body { background: #0b1122; background-attachment: scroll; }
+  /* jobs screen: page itself never scrolls (only the job list inside it) */
+  html.tech-lock, html.tech-lock body { height: 100%; overflow: hidden; overscroll-behavior: none; }
   h1, h2, .font-heading { font-family: 'Plus Jakarta Sans', 'DM Sans', sans-serif; letter-spacing: -0.015em; }
   ::selection { background: rgba(29,85,224,.18); }
   ::-webkit-scrollbar        { width: 8px; height: 8px; }

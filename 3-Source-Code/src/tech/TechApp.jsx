@@ -522,7 +522,7 @@ function SalaryCard({ label, m, current, onOpen }) {
   const paid = m && m.paid !== null && m.paid !== undefined
   const net = m ? (paid ? Number(m.balance) : Number(m.net)) : 0
   return (
-    <button type="button" onClick={m ? onOpen : undefined} className="glass-dark rounded-2xl px-3 py-2.5 text-left w-full flex flex-col justify-start active:scale-[.98] transition-transform">
+    <button type="button" onClick={m ? onOpen : undefined} className="bg-white/[.06] border border-white/10 rounded-2xl px-3 py-2.5 text-left w-full flex flex-col justify-start active:scale-[.98] transition-transform">
       <p className="text-[10px] font-semibold text-slate-300/90 uppercase tracking-wide flex items-center justify-between">{label} {m && <ChevronRight size={12} className="opacity-60" />}</p>
       <p className="text-[11px] text-slate-400 -mt-0.5">{month}{month && (current ? ` · 1 – ${day}` : '')}</p>
       {!m ? <div className="h-12 mt-1 rounded-lg bg-white/10 animate-pulse" /> : <>
@@ -604,6 +604,10 @@ export default function TechApp() {
   const { user, technician } = useAuth()
   const { toast } = useToast()
   useLang()   // re-render the whole app when the language changes
+  useEffect(() => {   // jobs screen: only the job list scrolls, never the page (see return below)
+    document.documentElement.classList.add('tech-lock')
+    return () => document.documentElement.classList.remove('tech-lock')
+  }, [])
   const qc = useQueryClient()
   const [tab, setTab] = useState('PENDING')
   const [openId, setOpenId] = useState(null)
@@ -770,9 +774,13 @@ export default function TechApp() {
   </>)
 
   return (
-    <div className="min-h-[100dvh] bg-[#f1f3fa]">
+    // (html.tech-lock is set in the effect above)
+    // Fixed-height app: the header never scrolls, only the job list below it scrolls.
+    // iPhone (iOS 26) blurs/fades whatever page content scrolls under its status bar —
+    // when the whole page scrolled, the header itself got that blur.
+    <div className="h-[100dvh] flex flex-col overflow-hidden bg-[#f1f3fa]">
       {/* one solid colour from the status bar down: iPhone darkens the top edge of the page, a gradient or glow there looked faded */}
-      <header className="bg-[#0b1122] text-white sticky top-0 z-30 overflow-hidden shadow-[0_6px_16px_-12px_rgba(11,17,34,.5)]" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+      <header className="bg-[#0b1122] text-white relative flex-shrink-0 z-30 overflow-hidden shadow-[0_6px_16px_-12px_rgba(11,17,34,.5)]" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="relative flex items-center justify-between px-4 pt-3 pb-2">
           <div className="flex items-center gap-2.5 min-w-0">
             <Logo size={42} className="flex-shrink-0" />
@@ -799,7 +807,7 @@ export default function TechApp() {
         </div>
       </header>
 
-      <main className="stagger p-3 space-y-3" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1.5rem)' }}>
+      <main className="stagger flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 space-y-3" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1.5rem)' }}>
         {['ask', 'install-first', 'blocked'].includes(push.state) && (
           <div className="rounded-3xl bg-gradient-to-br from-brand-600 to-ink-900 text-white p-4 flex items-start gap-3 shadow-soft">
             <BellRing size={22} className="flex-shrink-0 mt-0.5 text-sky-300" />
