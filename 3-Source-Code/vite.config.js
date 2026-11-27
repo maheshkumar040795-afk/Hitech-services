@@ -34,6 +34,8 @@ export default defineConfig({
           .replace('href="../manifest.json"', 'href="../manifest-tech.json"')
           .replace('href="../icons/apple-touch-icon.png"', 'href="../icons/tech-apple-touch-icon.png"')
           .replace('content="Hitech Ops"', 'content="HT Jobs"')
+          .replace('<html lang="en">', '<html lang="en" class="tech-app" style="background:#0b1122">')   // dark behind the iPhone status bar from the first paint
+          .replace('content="#1d55e0"', 'content="#0b1122"')
           .replace(/<title>[^<]*<\/title>/, '<title>HT Jobs — Hitech Services</title>')
           .replace('<script src="../config.js">', '<script>window.HT_TECH_ENTRY = true</script>\n    <script src="../config.js">')
         fs.mkdirSync(path.join(out, 'tech'), { recursive: true })

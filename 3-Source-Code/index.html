@@ -34,6 +34,8 @@
         if (TECH && location.hash.indexOf('#/tech') !== 0) history.replaceState(null, '', '#/tech')
         document.getElementById('app-manifest').href = B + (TECH ? 'manifest-tech.json' : 'manifest.json')
         document.getElementById('app-theme').content = TECH ? '#0b1122' : '#1d55e0'
+        // HT Jobs: dark page behind the iPhone status bar, so iOS does not mix a grey haze into the top
+        if (TECH) document.documentElement.classList.add('tech-app')
         document.getElementById('app-title').content = TECH ? 'HT Jobs' : 'Hitech Ops'
         document.getElementById('app-touch-icon').href = B + 'icons/' + (TECH ? 'tech-apple-touch-icon.png' : 'apple-touch-icon.png')
         document.title = TECH ? 'HT Jobs — Hitech Services' : 'Hitech Services — Operations'

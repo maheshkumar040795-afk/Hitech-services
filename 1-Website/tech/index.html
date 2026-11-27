@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="tech-app" style="background:#0b1122">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -7,7 +7,7 @@
     <title>HT Jobs — Hitech Services</title>
 
     <link rel="manifest" id="app-manifest" href="../manifest-tech.json" />
-    <meta name="theme-color" id="app-theme" content="#1d55e0" />
+    <meta name="theme-color" id="app-theme" content="#0b1122" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -35,6 +35,8 @@
         if (TECH && location.hash.indexOf('#/tech') !== 0) history.replaceState(null, '', '#/tech')
         document.getElementById('app-manifest').href = B + (TECH ? 'manifest-tech.json' : 'manifest.json')
         document.getElementById('app-theme').content = TECH ? '#0b1122' : '#1d55e0'
+        // HT Jobs: dark page behind the iPhone status bar, so iOS does not mix a grey haze into the top
+        if (TECH) document.documentElement.classList.add('tech-app')
         document.getElementById('app-title').content = TECH ? 'HT Jobs' : 'Hitech Ops'
         document.getElementById('app-touch-icon').href = B + 'icons/' + (TECH ? 'tech-apple-touch-icon.png' : 'apple-touch-icon.png')
         document.title = TECH ? 'HT Jobs — Hitech Services' : 'Hitech Services — Operations'
